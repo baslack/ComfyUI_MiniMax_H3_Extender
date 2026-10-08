@@ -61,7 +61,7 @@ from .motion_context_ram import (
     _streams_from_latent,
 )
 
-BUILD = "motion-context-disk-v3.0.6"
+BUILD = "motion-context-disk-v3.0.8"
 PREVIEW_AUDIO_MODE = "pcm_single_aac_gain_chain_v3_entry_ramp"
 CACHE_VERSION = 12
 PREVIEW_ROTATION_SLOTS = 3
@@ -3435,6 +3435,242 @@ def _render_one_final_segment(
     )
     return video, audio, int(shift)
 
+
+def _video_editor_output_connected(prompt, unique_id, output_slot=1):
+    """Return True when this Final Decode output slot is present in the queued graph.
+
+    The Video Editor connection is intentionally detected from ComfyUI's queued
+    prompt rather than from frontend state, so a connected editor reliably asks
+    for per-clip media even after refresh/restart.  The normal video output keeps
+    slot 0; the editor batch is appended at slot 1 for workflow compatibility.
+    """
+    if not isinstance(prompt, dict) or unique_id is None:
+        return False
+    owner = str(unique_id)
+    wanted_slot = int(output_slot)
+    for node in prompt.values():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for value in inputs.values():
+            if (
+                isinstance(value, (list, tuple))
+                and len(value) == 2
+                and str(value[0]) == owner
+            ):
+                try:
+                    if int(value[1]) == wanted_slot:
+                        return True
+                except Exception:
+                    continue
+    return False
+
+
+def _video_editor_batch_id(data_path, segment_paths, segments, export_profile):
+    """Stable id for one exact Full-Batch media state.
+
+    Re-running Final Decode without changing the cache must not duplicate the
+    same batch in the editor.  Rebuilt sidecars/cache data change their file
+    identity and therefore produce a new id that can be imported deliberately.
+    """
+    def file_identity(path):
+        path = Path(path)
+        try:
+            stat = path.stat()
+            return [str(path.resolve()), int(stat.st_size), int(stat.st_mtime_ns)]
+        except OSError:
+            return [str(path.resolve()), -1, -1]
+
+    cache_identity = file_identity(data_path)
+    payload = {
+        "cache": cache_identity,
+        "profile": normalize_full_batch_export_profile(export_profile),
+        "segments": [],
+    }
+    for index, (path, desc) in enumerate(zip(segment_paths, segments)):
+        audio = desc.get("decoded_audio") if isinstance(desc, dict) else None
+        payload["segments"].append({
+            "index": int(index + 1),
+            "clip_id": str(desc.get("clip_id") or "") if isinstance(desc, dict) else "",
+            "frames": int(desc.get("frames", 0) or 0) if isinstance(desc, dict) else 0,
+            "trim_frames": int(desc.get("trim_frames", 0) or 0) if isinstance(desc, dict) else 0,
+            "video": file_identity(path),
+            "audio": audio if isinstance(audio, dict) else None,
+        })
+    import hashlib
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:32]
+
+
+def _video_editor_source_id(data_path):
+    """Stable editor source id for one Extender cache owner across rerenders."""
+    import hashlib
+    raw = f"MiniMaxH3Extender|{Path(data_path).resolve()}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:32]
+
+
+def _video_editor_project_order(manifest, segments):
+    """Return stable logical clip order, including uncached cards when known."""
+    for key in ("editor_clip_order", "extender_clip_ids"):
+        values = [str(x) for x in list((manifest or {}).get(key) or []) if str(x)]
+        if values:
+            return values
+    ordered = []
+    for desc in segments or []:
+        clip_id = str((desc or {}).get("clip_id") or "")
+        if clip_id and clip_id not in ordered:
+            ordered.append(clip_id)
+    return ordered
+
+
+def _video_editor_render_id(segment_path, desc, export_profile, out_frames):
+    """Stable identity of one logical rendered clip, independent of export folder."""
+    import hashlib
+    path = Path(segment_path)
+    try:
+        stat = path.stat()
+        video_identity = [str(path.resolve()), int(stat.st_size), int(stat.st_mtime_ns)]
+    except OSError:
+        video_identity = [str(path.resolve()), -1, -1]
+    audio = (desc or {}).get("decoded_audio")
+    payload = {
+        "clip_id": str((desc or {}).get("clip_id") or ""),
+        "frames": int(out_frames),
+        "video": video_identity,
+        "audio": audio if isinstance(audio, dict) else None,
+        "profile": normalize_full_batch_export_profile(export_profile),
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:32]
+
+
+def _video_editor_batch_payload(
+    *, data_path, manifest, segment_paths, segments, clip_paths, wav_paths, fps, export_profile, sync_mode
+):
+    """Build an editor sync payload keyed by stable source/clip ids."""
+    source_id = _video_editor_source_id(data_path)
+    project_order = _video_editor_project_order(manifest, segments)
+    rank = {clip_id: i for i, clip_id in enumerate(project_order)}
+    editor_clips = []
+    for i, (segment_path, video_path, audio_path, desc) in enumerate(
+        zip(segment_paths, clip_paths, wav_paths, segments)
+    ):
+        clip_id = str(desc.get("clip_id") or f"clip_{i + 1}")
+        out_frames = int(desc.get("frames", 0) or 0)
+        if i > 0:
+            out_frames -= int(desc.get("trim_frames", 0) or 0)
+        order_index = int(rank.get(clip_id, i))
+        editor_clips.append({
+            "index": int(order_index + 1),
+            "clip_id": clip_id,
+            "render_id": _video_editor_render_id(
+                segment_path, desc, export_profile, max(0, int(out_frames))
+            ),
+            "label": f"Clip {order_index + 1}",
+            "video_path": str(Path(video_path).resolve()),
+            "audio_path": str(Path(audio_path).resolve()),
+            "frames": max(0, int(out_frames)),
+            "duration": max(0.0, float(out_frames) / float(fps)),
+        })
+    batch_id = _video_editor_batch_id(data_path, segment_paths, segments, export_profile)
+    return {
+        "version": 1,
+        "source": "MiniMaxH3Extender",
+        "source_id": str(source_id),
+        "batch_id": str(batch_id),
+        "sync_mode": str(sync_mode),
+        "project_order": project_order,
+        "fps": float(fps),
+        "clips": editor_clips,
+    }
+
+
+def _export_video_editor_batch_from_cached_segments(
+    *, ffmpeg, segment_paths, data_path, manifest, segments, fps, output_path,
+    export_profile, audio_bitrate, token, workflow=None, prompt=None, source_meta=None,
+    sync_mode="incremental"
+):
+    """Materialize MP4 + WAV media for editor sync from existing final caches.
+
+    This never samples or VAE-decodes a clip. Video comes from exact-final
+    sidecars and audio comes from the existing decoded PCM cache.
+    """
+    root = _ensure_cache_root()
+    segment_paths = [Path(p) for p in segment_paths]
+    segments = [dict(x) for x in segments]
+    if len(segment_paths) != len(segments) or not segments:
+        raise ValueError("H3 Video Editor bridge: invalid cached segment set.")
+    raw_audio = root / f"_{token}_editor_audio.f32le"
+    individual_audio_paths = [
+        root / f"_{token}_editor_clip_{i + 1:04d}.f32le"
+        for i in range(len(segments))
+    ]
+    errors = []
+    try:
+        sr, channels, _ = _write_preview_pcm_audio(
+            ffmpeg, data_path, segments, len(segments), float(fps), raw_audio, token,
+            individual_raw_audio_paths=individual_audio_paths,
+            individual_errors=errors,
+            source_meta=source_meta,
+        )
+        if errors:
+            raise RuntimeError("H3 Video Editor audio capture failed: " + "; ".join(errors))
+        _clips_dir, clip_paths, wav_paths = _export_individual_final_clips_from_pcm(
+            ffmpeg=ffmpeg,
+            segment_paths=segment_paths,
+            individual_audio_paths=individual_audio_paths,
+            output_path=output_path,
+            export_profile=export_profile,
+            audio_bitrate=audio_bitrate,
+            sample_rate=sr,
+            channels=channels,
+            token=f"{token}_editor_individual",
+            workflow=workflow,
+            prompt=prompt,
+            progress=None,
+            save_wav=True,
+        )
+        return _video_editor_batch_payload(
+            data_path=data_path,
+            manifest=manifest,
+            segment_paths=segment_paths,
+            segments=segments,
+            clip_paths=clip_paths,
+            wav_paths=wav_paths,
+            fps=float(fps),
+            export_profile=export_profile,
+            sync_mode=sync_mode,
+        )
+    finally:
+        for item in [raw_audio, *individual_audio_paths]:
+            try:
+                Path(item).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def _raw_f32le_to_wav(ffmpeg, raw_audio, output_path, sample_rate, channels, log_path):
+    """Wrap exact final float32 PCM in a lossless WAV file for the Video Editor."""
+    cmd = [
+        ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+        "-f", "f32le", "-ar", str(int(sample_rate)), "-ac", str(int(channels)),
+        "-i", str(raw_audio), "-vn", "-c:a", "pcm_f32le", str(output_path),
+    ]
+    with open(log_path, "wb") as log_f:
+        proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=log_f)
+    if proc.returncode != 0 or not Path(output_path).exists() or Path(output_path).stat().st_size <= 0:
+        detail = ""
+        try:
+            detail = Path(log_path).read_bytes()[-12000:].decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        raise RuntimeError(
+            f"H3 Video Editor audio export failed with ffmpeg code {proc.returncode}.\n{detail}"
+        )
+
+
 def _export_final_from_exact_segment_caches(
     ffmpeg,
     segment_paths,
@@ -3447,11 +3683,13 @@ def _export_final_from_exact_segment_caches(
     token,
     *,
     save_individual_clips=False,
+    editor_batch_requested=False,
     workflow=None,
     prompt=None,
     progress=None,
     source_meta=None,
     source_segment_path=None,
+    manifest=None,
 ):
     """Mux a Full-Batch final from already-final video segments.
 
@@ -3475,7 +3713,7 @@ def _export_final_from_exact_segment_caches(
     individual_audio_errors = []
     individual_export_info = {}
 
-    if bool(save_individual_clips):
+    if bool(save_individual_clips) or bool(editor_batch_requested):
         individual_audio_paths = [
             root / f"_{token}_clip_{i + 1:04d}.f32le"
             for i in range(len(segments))
@@ -3495,7 +3733,7 @@ def _export_final_from_exact_segment_caches(
             raw_audio,
             token,
             individual_raw_audio_paths=(
-                individual_audio_paths if bool(save_individual_clips) else None
+                individual_audio_paths if (bool(save_individual_clips) or bool(editor_batch_requested)) else None
             ),
             individual_errors=individual_audio_errors,
             source_meta=source_meta,
@@ -3514,7 +3752,7 @@ def _export_final_from_exact_segment_caches(
 
         # The assembled final is already safely on disk before optional clip
         # export begins. Any failure here is reported but never invalidates it.
-        if bool(save_individual_clips):
+        if bool(save_individual_clips) or bool(editor_batch_requested):
             if individual_audio_errors:
                 message = (
                     "H3 individual clip audio capture failed: "
@@ -3522,9 +3760,21 @@ def _export_final_from_exact_segment_caches(
                 )
                 _LOG.error("%s (assembled video preserved)", message)
                 individual_export_info = {"individual_clips_error": message}
+                if bool(editor_batch_requested):
+                    individual_export_info["video_editor_batch"] = {
+                        "version": 1,
+                        "source": "MiniMaxH3Extender",
+                        "source_id": _video_editor_source_id(data_path),
+                        "batch_id": _video_editor_batch_id(data_path, segment_paths, segments, profile),
+                        "sync_mode": "full",
+                        "project_order": _video_editor_project_order(manifest or {}, segments),
+                        "fps": float(fps),
+                        "clips": [],
+                        "error": message,
+                    }
             else:
                 try:
-                    clips_dir, clip_paths = _export_individual_final_clips_from_pcm(
+                    clips_dir, clip_paths, wav_paths = _export_individual_final_clips_from_pcm(
                         ffmpeg=ffmpeg,
                         segment_paths=segment_paths,
                         individual_audio_paths=individual_audio_paths,
@@ -3537,14 +3787,27 @@ def _export_final_from_exact_segment_caches(
                         workflow=workflow,
                         prompt=prompt,
                         progress=progress,
+                        save_wav=bool(editor_batch_requested),
                     )
                     individual_export_info = {
                         "individual_clips_dir": str(clips_dir),
                         "individual_clips_count": int(len(clip_paths)),
                     }
+                    if bool(editor_batch_requested):
+                        individual_export_info["video_editor_batch"] = _video_editor_batch_payload(
+                            data_path=data_path,
+                            manifest=(manifest or {"segments": segments}),
+                            segment_paths=segment_paths,
+                            segments=segments,
+                            clip_paths=clip_paths,
+                            wav_paths=wav_paths,
+                            fps=float(fps),
+                            export_profile=profile,
+                            sync_mode="full",
+                        )
                     _LOG.info(
-                        "H3 individual clips exported: clips=%d dir=%s",
-                        len(clip_paths), clips_dir,
+                        "H3 individual clips exported: clips=%d dir=%s editor=%s",
+                        len(clip_paths), clips_dir, bool(editor_batch_requested),
                     )
                 except Exception as exc:
                     _LOG.error(
@@ -3552,6 +3815,18 @@ def _export_final_from_exact_segment_caches(
                         exc,
                     )
                     individual_export_info = {"individual_clips_error": str(exc)}
+                    if bool(editor_batch_requested):
+                        individual_export_info["video_editor_batch"] = {
+                            "version": 1,
+                            "source": "MiniMaxH3Extender",
+                            "source_id": _video_editor_source_id(data_path),
+                            "batch_id": _video_editor_batch_id(data_path, segment_paths, segments, profile),
+                            "sync_mode": "full",
+                            "project_order": _video_editor_project_order(manifest or {}, segments),
+                            "fps": float(fps),
+                            "clips": [],
+                            "error": str(exc),
+                        }
 
         return "exact_segment_stream_copy", individual_export_info
     finally:
@@ -3591,6 +3866,7 @@ def _export_individual_final_clips_from_pcm(
     workflow=None,
     prompt=None,
     progress=None,
+    save_wav=False,
 ):
     """Mux already-final video sidecars with PCM captured during final assembly.
 
@@ -3607,13 +3883,14 @@ def _export_individual_final_clips_from_pcm(
             "H3 individual clip export: video/audio segment count mismatch."
         )
     if not segment_paths:
-        return None, []
+        return None, [], []
 
     extension = _full_batch_export_profile_extension(profile)
     final_dir = _next_individual_clips_dir(output_path)
     staging_dir = final_dir.with_name(f".{final_dir.name}.{uuid.uuid4().hex[:10]}.tmp")
     staging_dir.mkdir(parents=True, exist_ok=False)
     staged_outputs = []
+    staged_wavs = []
 
     try:
         for i, (video_path, raw_audio) in enumerate(
@@ -3647,6 +3924,19 @@ def _export_individual_final_clips_from_pcm(
                     clip_output, workflow=workflow, prompt=prompt
                 )
                 staged_outputs.append(clip_output)
+                if bool(save_wav):
+                    wav_output = staging_dir / f"{Path(output_path).stem}_clip_{i + 1:03d}.wav"
+                    wav_log = Path(raw_audio).with_suffix(".wav.log")
+                    try:
+                        _raw_f32le_to_wav(
+                            ffmpeg, raw_audio, wav_output, sample_rate, channels, wav_log
+                        )
+                        staged_wavs.append(wav_output)
+                    finally:
+                        try:
+                            wav_log.unlink(missing_ok=True)
+                        except OSError:
+                            pass
             finally:
                 try:
                     mux_log.unlink(missing_ok=True)
@@ -3658,7 +3948,8 @@ def _export_individual_final_clips_from_pcm(
 
         os.replace(staging_dir, final_dir)
         outputs = [final_dir / item.name for item in staged_outputs]
-        return final_dir, outputs
+        wav_outputs = [final_dir / item.name for item in staged_wavs]
+        return final_dir, outputs, wav_outputs
     except Exception:
         shutil.rmtree(staging_dir, ignore_errors=True)
         raise
@@ -5281,8 +5572,8 @@ class MiniMaxH3MotionContextDiskFinalDecode:
             },
         }
 
-    RETURN_TYPES = ("VIDEO",)
-    RETURN_NAMES = ("video",)
+    RETURN_TYPES = ("VIDEO", "VIDEO_EDITOR_BATCH")
+    RETURN_NAMES = ("video", "editor_batch")
     FUNCTION = "export"
     CATEGORY = "MiniMax H3"
     OUTPUT_NODE = True
@@ -5314,6 +5605,9 @@ class MiniMaxH3MotionContextDiskFinalDecode:
         if not math.isfinite(fps) or fps <= 0.0:
             raise ValueError(f"Disk Final Decode: invalid cached fps {fps!r}.")
         workflow = _workflow_from_extra_pnginfo(extra_pnginfo)
+        editor_connected = _video_editor_output_connected(prompt, unique_id, 1)
+        editor_batch_requested = bool(editor_connected and isinstance(cache, dict))
+        effective_save_individual_clips = bool(save_individual_clips) or bool(editor_batch_requested)
         project_autosave_settings = None
         if auto_save_project:
             project_autosave_settings = {
@@ -5341,7 +5635,8 @@ class MiniMaxH3MotionContextDiskFinalDecode:
                 codec=codec, crf=crf, preset=preset, audio_bitrate=audio_bitrate,
                 unique_id=unique_id, workflow=workflow, prompt=prompt,
                 project_autosave_settings=project_autosave_settings,
-                save_individual_clips=bool(save_individual_clips),
+                save_individual_clips=bool(effective_save_individual_clips),
+                editor_batch_requested=bool(editor_batch_requested),
             )
         if sequence_mode == "fl2va":
             from .fl2va_engine import export_fl2va_final
@@ -5351,7 +5646,8 @@ class MiniMaxH3MotionContextDiskFinalDecode:
                 codec=codec, crf=crf, preset=preset, audio_bitrate=audio_bitrate,
                 unique_id=unique_id, workflow=workflow, prompt=prompt,
                 project_autosave_settings=project_autosave_settings,
-                save_individual_clips=bool(save_individual_clips),
+                save_individual_clips=bool(effective_save_individual_clips),
+                editor_batch_requested=bool(editor_batch_requested),
             )
         source_meta = _source_meta(manifest)
         source_frames = _source_frame_count(source_meta)
@@ -5408,6 +5704,58 @@ class MiniMaxH3MotionContextDiskFinalDecode:
             _embed_final_metadata_in_place(autosave_path, workflow=workflow, prompt=prompt)
             progress.advance()
 
+            editor_batch = None
+            if bool(editor_batch_requested):
+                try:
+                    live_manifest = _load_manifest_from_paths(data_path, manifest_path) or manifest
+                    live_segments = [dict(x) for x in live_manifest.get("segments", [])]
+                    live_manifest, live_segments = _ensure_ref2va_audio_cache(
+                        data_path, manifest_path, live_manifest, vae, audio_vae, float(fps),
+                        count=len(live_segments), progress=None,
+                    )
+                    editor_segment_paths = []
+                    for i in range(len(live_segments)):
+                        adjustment = _normalize_color_adjustment(live_segments[i].get("color_adjustment"))
+                        live_manifest, final_segment_path, _ = _ensure_ref2va_final_segment_cache(
+                            data_path, manifest_path, live_manifest, i, vae, float(fps), ffmpeg,
+                            clip_by_clip_export_profile, progress=None, color_adjustment=adjustment,
+                        )
+                        editor_segment_paths.append(final_segment_path)
+                        live_segments = [dict(x) for x in live_manifest.get("segments", [])]
+                    editor_batch = _export_video_editor_batch_from_cached_segments(
+                        ffmpeg=ffmpeg,
+                        segment_paths=editor_segment_paths,
+                        data_path=data_path,
+                        manifest=live_manifest,
+                        segments=live_segments,
+                        fps=float(fps),
+                        output_path=autosave_path,
+                        export_profile=clip_by_clip_export_profile,
+                        audio_bitrate=audio_bitrate,
+                        token=f"clip_editor_{_safe_name(unique_id)}_{uuid.uuid4().hex[:8]}",
+                        workflow=workflow,
+                        prompt=prompt,
+                        source_meta=source_meta,
+                        sync_mode="incremental",
+                    )
+                    manifest = live_manifest
+                    segments = live_segments
+                except Exception as exc:
+                    _LOG.error("H3 Video Editor Clip-by-Clip bridge failed: %s", exc)
+                    editor_batch = {
+                        "version": 1,
+                        "source": "MiniMaxH3Extender",
+                        "source_id": _video_editor_source_id(data_path),
+                        "batch_id": _video_editor_batch_id(
+                            data_path, [], segments, clip_by_clip_export_profile
+                        ),
+                        "sync_mode": "incremental",
+                        "project_order": _video_editor_project_order(manifest, segments),
+                        "fps": float(fps),
+                        "clips": [],
+                        "error": str(exc),
+                    }
+
             total_frames = int(manifest.get("final_frame_count", 0)) + int(source_frames)
             total_duration = float(total_frames / float(fps))
             size = _cache_size_mb(data_path, manifest_path)
@@ -5435,7 +5783,10 @@ class MiniMaxH3MotionContextDiskFinalDecode:
                         "color_preview_baked": False,
                     }],
                 },
-                "result": (_video_output_from_path(autosave_path),),
+                "result": (
+                    _video_output_from_path(autosave_path),
+                    editor_batch if bool(editor_batch_requested) else None,
+                ),
             }
 
         # Full Batch is strictly incremental and keeps a separate exact-final
@@ -5447,7 +5798,7 @@ class MiniMaxH3MotionContextDiskFinalDecode:
             total=max(
                 8,
                 5 + (2 * len(segments))
-                + (len(segments) if bool(save_individual_clips) else 0),
+                + (len(segments) if bool(effective_save_individual_clips) else 0),
             ),
         )
         requested_profile = normalize_full_batch_export_profile({
@@ -5527,12 +5878,14 @@ class MiniMaxH3MotionContextDiskFinalDecode:
             export_profile=export_profile,
             audio_bitrate=audio_bitrate,
             token=token,
-            save_individual_clips=bool(save_individual_clips),
+            save_individual_clips=bool(effective_save_individual_clips),
+            editor_batch_requested=bool(editor_batch_requested),
             workflow=workflow,
             prompt=prompt,
             progress=progress,
             source_meta=source_meta,
             source_segment_path=source_final_segment,
+            manifest=manifest,
         )
 
         _embed_final_metadata_in_place(output_path, workflow=workflow, prompt=prompt)
@@ -5565,7 +5918,10 @@ class MiniMaxH3MotionContextDiskFinalDecode:
                     "color_preview_baked": False,
                 }],
             },
-            "result": (_video_output_from_path(output_path),),
+            "result": (
+                _video_output_from_path(output_path),
+                individual_export_info.get("video_editor_batch") if bool(editor_batch_requested) else None,
+            ),
         }
 
 

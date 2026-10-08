@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gc
 import hashlib
 import os
 import re
@@ -12,10 +11,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-try:
-    import comfy.model_management as mm
-except Exception:
-    mm = None
+import comfy.model_management as mm
+import comfy.model_patcher
 
 FOLDER = "latent_upscale_models"
 MODEL_NAME = "minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors"
@@ -249,9 +246,10 @@ def _detect(sd):
 
 
 def _load_model(path, device):
-    key = str(path)
-    model = _CACHE.get(key)
-    if model is None:
+    """Cache CPU weights and their ComfyUI patcher; never transfer weights ourselves."""
+    key = (str(path), str(device))
+    patcher = _CACHE.get(key)
+    if patcher is None:
         sd = _load_state(path)
         cfg = _detect(sd)
         if cfg["in_channels"] != 24:
@@ -259,8 +257,28 @@ def _load_model(path, device):
         model = LatentResizer3D(**cfg).to(torch.bfloat16)
         model.load_state_dict(sd, strict=True)
         model = model.eval().requires_grad_(False)
-        _CACHE[key] = model.cpu()
-    return model.to(device)
+        # Explicit CPU offload even if ComfyUI is configured for high VRAM.
+        # It must not keep the upscaler resident beside H3 between clips.
+        patcher = comfy.model_patcher.ModelPatcher(
+            model, load_device=device, offload_device=torch.device("cpu")
+        )
+        _CACHE[key] = patcher
+    return patcher
+
+
+def _upscale_memory_required(video, out_h, out_w):
+    """Estimate BF16 working memory for a 512-channel 3D Conv segment.
+
+    The model chunks *time* (32 frames plus temporal context), not space.
+    ComfyUI must leave room for feature maps as well as the upscaler weights.
+    This is an estimate, not an OOM guarantee.
+    """
+    b, _, t, h, w = video.shape
+    # Worst-case temporal segment: 32 frames plus 4 x 5 context frames.
+    segment_t = min(int(t), 52) if t > 32 else int(t)
+    feature_bytes = (int(b) * 512 * segment_t * (int(h) * int(w) + int(out_h) * int(out_w))) * 2
+    input_bytes = int(b) * 24 * int(t) * (int(h) * int(w) + int(out_h) * int(out_w)) * 2
+    return 6 * feature_bytes + 3 * input_bytes
 
 
 def target_dimensions(width: int, height: int, scale: float):
@@ -274,7 +292,7 @@ def target_dimensions(width: int, height: int, scale: float):
 def upscale_video_latent(video: torch.Tensor, scale: float, progress=None):
     if not torch.is_tensor(video) or video.ndim != 5 or int(video.shape[1]) != 24:
         raise ValueError("MiniMax H3 Extender: expected H3 video latent [B,24,T,H,W]")
-    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dev = mm.get_torch_device()
     orig_device, orig_dtype = video.device, video.dtype
     _, _, t, h, w = video.shape
     target_w_px, target_h_px = target_dimensions(w * VAE_DOWNSAMPLE, h * VAE_DOWNSAMPLE, scale)
@@ -282,15 +300,36 @@ def upscale_video_latent(video: torch.Tensor, scale: float, progress=None):
     if (h2, w2) == (h, w):
         return video, target_w_px, target_h_px
     path = ensure_upscale_model(progress=progress)
-    model = _load_model(path, dev)
-    x = video.to(dev, dtype=torch.bfloat16, copy=True)
-    mean = torch.tensor(LATENTS_MEAN, device=dev, dtype=torch.bfloat16).view(1, -1, 1, 1, 1)
-    std = torch.tensor(LATENTS_STD, device=dev, dtype=torch.bfloat16).view(1, -1, 1, 1, 1)
-    x = (x - mean) / std
-    out = model(x, float(scale), (t, h2, w2), enable_chunking=True)
-    out = (out * std + mean).to(device=orig_device, dtype=orig_dtype)
-    model.cpu(); del x, mean, std
-    if mm is not None: mm.soft_empty_cache()
-    elif torch.cuda.is_available(): torch.cuda.empty_cache()
-    gc.collect()
-    return out, target_w_px, target_h_px
+    patcher = _load_model(path, dev)
+    loaded = False
+    try:
+        # H3 is already a ComfyUI-managed MODEL. Loading this patcher lets
+        # ComfyUI offload H3 when needed, then reload it for Refine sampling.
+        # Full load is required: plain PyTorch Conv3d doesn't use Comfy's
+        # partial-weight/low-VRAM casting ops.
+        mm.load_models_gpu(
+            [patcher],
+            memory_required=_upscale_memory_required(video, h2, w2),
+            force_full_load=True,
+        )
+        loaded = True
+        x = video.to(dev, dtype=torch.bfloat16, copy=True)
+        mean = torch.tensor(LATENTS_MEAN, device=dev, dtype=torch.bfloat16).view(1, -1, 1, 1, 1)
+        std = torch.tensor(LATENTS_STD, device=dev, dtype=torch.bfloat16).view(1, -1, 1, 1, 1)
+        x = (x - mean) / std
+        out = patcher.model(x, float(scale), (t, h2, w2), enable_chunking=True)
+        out = (out * std + mean).to(device=orig_device, dtype=orig_dtype)
+        return out, target_w_px, target_h_px
+    finally:
+        # Always release the upscaler through ComfyUI, including after OOM
+        # and interruption. Its cached CPU weights/patcher remain reusable.
+        # Do not globally unload H3 or other models.
+        try:
+            mm.unload_model_and_clones(patcher)
+        finally:
+            if not loaded:
+                # A failure *inside* load_models_gpu may happen before the
+                # model is registered with the manager. Recover that partial
+                # transfer instead of leaving a half-loaded cached model.
+                patcher.unpatch_model(device_to=torch.device("cpu"))
+            mm.soft_empty_cache()
