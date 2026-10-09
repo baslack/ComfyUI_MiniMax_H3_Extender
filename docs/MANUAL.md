@@ -115,6 +115,59 @@ the node; delete that folder (or use **New Project**) to reclaim space.
   7 latent frames plus the next clip; lower resolution or clip length if it
   still doesn't fit.
 
+## Graph nodes (experimental)
+
+An alternative to the Extender node: each step is an ordinary node, so clips
+use ComfyUI's own samplers, schedulers, noise and LoRA loaders. The Extender
+node is unchanged. See `Workflow/MiniMax_H3_Graph_Ref2VA.json` and
+`Workflow/MiniMax_H3_Graph_FL2VA.json`.
+
+| Node | Does |
+|---|---|
+| **MiniMax H3 Definition** | One named reference. `kind` is Subject (any number of images and videos), Picture, Video (optionally with its soundtrack) or Audio, with the guide's role and retention choices. |
+| **MiniMax H3 Definitions** | Bundles definitions once for every clip. Names must be unique. |
+| **MiniMax H3 Ref2VA Prompt** | One clip's prompt in MiniMax's six-section Ref2VA format. |
+| **MiniMax H3 Keyframe Prompt** | T2VA / I2VA / FL2VA / L2VA prompt; the connected first/last frames pick the task. |
+| **MiniMax H3 Encode** | Prompt + references → `positive`, `latent` and `composed_prompt`, the exact text the model gets. |
+
+**Writing prompts.**
+
+- Refer to definitions by name: `<Subject fred>`, `<Picture opening>`,
+  `<Video dolly>`, `<Audio fredvoice>`, and to a Video definition's soundtrack
+  as `<Audio dolly>`.
+- Inside a definition, `<Picture 1>` / `<Video 1>` mean that node's own first
+  attached image or video.
+- Name speakers: `(S fred)`, or `(S fred, S mara)` when they speak together.
+- Write `detailed_description` in the guide's form: a style sentence, then
+  `[Shot 1] …`, `[Shot 2] At 00:03.000, …`.
+
+Each clip numbers only what its text mentions, in the order the model reads
+it, and speakers in the order they first speak in that clip. An unknown name,
+a name used with the wrong kind, or a speaker who never speaks in the clip
+stops the run with an error naming it. The `retention_analysis` lines,
+including which shots each subject appears in, and the summary's task tags are
+filled in for you; pick `task_types` to set the tags yourself.
+
+**Clips.**
+
+- **Building a clip:** encode → **Motion Context RAM** (previous clip's
+  `cached_samples` as `context_latent`; leave it unconnected for clip 1) →
+  `BasicGuider` → `SamplerCustomAdvanced` → **Disk Join**. Use
+  `BasicGuider`; H3 does badly with CFG guidance.
+- **Reusing a clip:** keep the clip as a subgraph and duplicate it for the
+  next clip.
+- **Disk Join settings:** `clip_name` names the clip's file in individual clip
+  exports. `saturation`, `contrast` and `brightness` set its colour in Final
+  Decode.
+- **Refine:** refine every clip at the same scale, or none. Feed the next
+  clip's refine pass a second Motion Context RAM with the encoder's
+  `positive`. A refined previous clip is shrunk automatically for the base
+  pass.
+- **FL2VA clips:** these have no motion context. Wire `trim_frames` to 0 (for
+  example from a `PrimitiveInt`); unconnected, Disk Join assumes 22.
+
+Continuing an existing video is not available with the graph nodes yet.
+
 ## Tests
 
 See `tests/contract/README.md` for the local contract test suite.
