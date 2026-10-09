@@ -105,7 +105,7 @@ from .ref2va_independent import (
     run as _run_ref2va_independent,
 )
 
-BUILD = "minimax-h3-extender-v3.0.11"
+BUILD = "minimax-h3-extender-v3.0.12"
 _LOG = logging.getLogger(__name__)
 FPS = 24
 AUDIO_LATENT_FPS = 40
@@ -2707,6 +2707,46 @@ def _release_models_before_refine(clip_model):
             released_groups.add(group)
     if released:
         _LOG.info("H3 Refine preflight: offloaded via ComfyUI: %s", ", ".join(released))
+
+
+
+def _cleanup_full_batch_aimdo_between_clips(generation_mode, clip_index):
+    """Mirror ComfyUI's AIMDO per-node cleanup at a Full Batch clip boundary.
+
+    Each clip's decoded VideoVAE/AudioVAE cache is complete before this runs.
+    A Full Batch is one node execution, so ComfyUI's normal per-node finally
+    does not otherwise run until *all* clips have finished. Do not unload the
+    H3 model, touch latent checkpoints or affect Clip by Clip.
+    """
+    try:
+        import comfy.memory_management as memory_management
+        if not bool(getattr(memory_management, "aimdo_enabled", False)):
+            return
+    except ImportError as exc:
+        _LOG.warning("H3 Full Batch AIMDO cleanup unavailable: %s", exc)
+        return
+
+    # Keep the order of ComfyUI's execution.py per-node AIMDO cleanup.
+    # Call each step independently: a version-specific API failure must not
+    # corrupt a completed clip or prevent the remaining cleanup operations.
+    try:
+        import comfy.model_prefetch as model_prefetch
+        model_prefetch.cleanup_prefetch_queues()
+    except Exception as exc:
+        _LOG.warning("H3 Full Batch prefetch cleanup skipped: %s", exc)
+    try:
+        comfy.model_management.reset_cast_buffers()
+    except Exception as exc:
+        _LOG.warning("H3 Full Batch cast-buffer cleanup skipped: %s", exc)
+    try:
+        import comfy_aimdo.model_vbar as model_vbar
+        model_vbar.vbars_reset_watermark_limits()
+    except Exception as exc:
+        _LOG.warning("H3 Full Batch AIMDO watermark reset skipped: %s", exc)
+    _LOG.info(
+        "H3 Full Batch %s: AIMDO boundary cleanup after clip %d",
+        str(generation_mode), int(clip_index) + 1,
+    )
 
 
 def _refine_ref2va_sample(
@@ -5478,6 +5518,7 @@ class MiniMaxH3Extender:
                     ),
                 )
                 statuses.append(f"FL2VA clip {i + 1} resumed from checkpoint")
+                _cleanup_full_batch_aimdo_between_clips("FL2VA", i)
                 if first_frame is not None:
                     del first_frame
                 continue
@@ -5663,6 +5704,9 @@ class MiniMaxH3Extender:
             dependent = _dependent_indices(i)
             if dependent:
                 _drop_stale_indices(dependent)
+
+            if str(run_mode) == "full_batch":
+                _cleanup_full_batch_aimdo_between_clips("FL2VA", i)
 
             _send_extender_progress(
                 owner, i, len(clips), "complete",
@@ -6303,6 +6347,7 @@ class MiniMaxH3Extender:
                     export_profile=active_export_profile,
                     color_adjustment=cfg.get("color_adjustment"),
                 )
+                _cleanup_full_batch_aimdo_between_clips("Ref2VA Motion ON", i)
                 continue
 
             # Reaching this point with Validated=True is a programming error.
@@ -6631,6 +6676,7 @@ class MiniMaxH3Extender:
                     export_profile=active_export_profile,
                     color_adjustment=cfg.get("color_adjustment"),
                 )
+                _cleanup_full_batch_aimdo_between_clips("Ref2VA Motion ON", i)
 
             _send_extender_progress(
                 owner,
