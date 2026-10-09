@@ -59,7 +59,9 @@ def _cache_two_clips(ext, owner, first, second, trim_frames=22):
 
 def _render_second_clip(ext, vae, data_path, segments):
     disk = importlib.import_module(f"{ext.pkg.__name__}.motion_context_disk")
-    video, _shift = disk._render_one_final_video_segment(data_path, segments, 1, vae)
+    # ComfyUI executes every node inside torch.inference_mode() (execution.py).
+    with torch.inference_mode():
+        video, _shift = disk._render_one_final_video_segment(data_path, segments, 1, vae)
     return video
 
 
