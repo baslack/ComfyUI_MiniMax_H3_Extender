@@ -488,6 +488,7 @@ _LOG = logging.getLogger("minimax_h3_tail_from_latent.motion_context_disk")
 
 _NODE_DIR = Path(__file__).resolve().parent
 _CACHE_ROOT = _NODE_DIR / "cache"
+_SEAM_PREVIOUS_TOKENS = 7
 _DATA_MAGIC = b"H3MCACHE12\x00"
 _DATA_START = len(_DATA_MAGIC)
 _AUDIO_CACHE_MAGIC = b"H3MAUDIO1\x00"
@@ -1253,6 +1254,12 @@ class MiniMaxH3MotionContextDiskJoin:
 
 def _build_pair_video(data_path, prev_desc, curr_desc):
     prev_v = _load_segment_video(data_path, prev_desc)
+    # The H3 VAE decodes independent 5-token chunks (plus 2 overlap tokens
+    # blended over 5 frames), so the previous clip's last 7 tokens yield the
+    # same seam frames as the whole clip. T = 2 (mod 5) keeps the cut on a
+    # chunk boundary; the seam only reads the previous clip's last frames.
+    if int(prev_v.shape[2]) > _SEAM_PREVIOUS_TOKENS:
+        prev_v = prev_v[:, :, -_SEAM_PREVIOUS_TOKENS:]
     next_v = _load_segment_video(data_path, curr_desc)
 
     if tuple(prev_v.shape[:2]) != tuple(next_v.shape[:2]) or tuple(prev_v.shape[3:]) != tuple(next_v.shape[3:]):
