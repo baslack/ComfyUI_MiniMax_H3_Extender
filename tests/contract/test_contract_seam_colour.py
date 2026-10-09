@@ -1,9 +1,10 @@
 """Seam contract: the next clip eases from the previous clip's colour into its own.
 
-The first decoded frames of a continued clip can flash or sit on a different
-brightness or colour. Final Decode moves each of them onto a straight path
-from the previous clip's last frame to the next clip's settled colour, and
-leaves the rest of the clip untouched.
+The next clip's copy of the previous clip's frames can sit on a different
+brightness or colour. Final Decode shifts the next clip's first frames by the
+difference between the previous clip's frame and the next clip's copy of that
+same frame, fading the shift out, so the next clip keeps its own changes in
+light. Later frames are untouched.
 """
 from __future__ import annotations
 
@@ -12,31 +13,43 @@ import importlib
 import pytest
 import torch
 
+PREV, WARM, CONTINUED = 8, 5, 20
+A = (0.25, 0.25, 0.25)
+
+
+class DecodedVAE:
+    def __init__(self, frames):
+        self.frames = frames
+
+    def decode(self, chain):
+        return self.frames
+
 
 def _frames(colours):
-    return torch.stack([torch.full((16, 24, 3), 0.0) + torch.tensor(c) for c in colours])
+    return torch.stack([torch.zeros(16, 24, 3) + torch.tensor(c) for c in colours])
 
 
-SETTLED = (0.32, 0.30, 0.28)
 CASES = {
-    "flash": [(0.42, 0.40, 0.38), (0.38, 0.36, 0.34)] + [SETTLED] * 18,
-    "step": [SETTLED] * 20,
-    "colour": [(0.30, 0.30, 0.36), (0.30, 0.30, 0.34)] + [SETTLED] * 18,
+    "brighter": ((0.30, 0.30, 0.30), [(0.30, 0.30, 0.30)] * CONTINUED),
+    "brightening": ((0.30, 0.30, 0.30), [(0.31 + 0.01 * k,) * 3 for k in range(CONTINUED)]),
+    "colour": ((0.25, 0.25, 0.31), [(0.25, 0.25, 0.31)] * CONTINUED),
 }
 
 
 @pytest.mark.parametrize("case", list(CASES))
-def test_next_clip_eases_from_the_previous_clips_last_frame(ext, case):
+def test_next_clip_eases_from_the_previous_clips_colour(ext, case):
     d = importlib.import_module(f"{ext.pkg.__name__}.motion_context_disk")
-    previous = _frames([(0.25, 0.25, 0.25)] * 4)
-    current = _frames(CASES[case])
-    untouched = current[12:].clone()
+    copy, new = CASES[case]
+    frames = _frames([A] * PREV + [copy] * WARM + new)
+    meta = {"previous_frames": PREV, "warmup_frames": WARM, "continued_frames": CONTINUED,
+            "decode_frames": int(frames.shape[0])}
+    untouched = frames[PREV + WARM + 12:].clone()
 
-    d._correct_current_segment(previous, current)
+    current, shift = d._decode_pair_video(DecodedVAE(frames), None, meta)
 
+    assert shift == 0
     means = current[..., :3].mean(dim=(1, 2))
     for k in range(12):
-        t = k / 12
-        expected = torch.tensor([0.25 * (1 - t) + s * t for s in SETTLED])
+        expected = torch.tensor([n + (a - c) * (1 - k / 12) for n, a, c in zip(new[k], A, copy)])
         assert torch.allclose(means[k], expected, atol=1e-4), (k, means[k], expected)
     assert torch.equal(current[12:], untouched)

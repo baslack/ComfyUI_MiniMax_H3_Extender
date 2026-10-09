@@ -1342,13 +1342,13 @@ def _decode_pair_video(vae, chain, meta):
     if start < prev_frames or end > int(decoded.shape[0]):
         raise RuntimeError("Disk Final Decode: seam crop lies outside decoded pair.")
 
-    previous_raw = decoded[:prev_frames - lead]
     current_raw = decoded[start:end]
+    _match_seam_colour(decoded, current_raw, prev_frames - max(lead, 1), warmup)
     if lead:
         # Fade from A's real frames into B's re-created ones over the first frames.
         for j in range(SEAM_CROSSFADE_FRAMES):
             current_raw[j].lerp_(decoded[prev_frames - lead + j], 1.0 - (j + 1) / (SEAM_CROSSFADE_FRAMES + 1))
-    return decoded, previous_raw, current_raw, -lead
+    return current_raw, -lead
 
 
 SEAM_CROSSFADE_FRAMES = 6
@@ -1375,31 +1375,28 @@ def _aligned_seam_lead(decoded, prev_frames, warmup):
     return prev_frames - cut
 
 
-def _correct_current_segment(previous_raw, current_raw, ease_frames=12):
-    """Ease the next clip's colour in from the previous clip's last frame.
+SEAM_COLOUR_EASE_FRAMES = 12
 
-    The next clip's first decoded frames can flash, or sit on a different
-    brightness or colour than the previous clip's tail. Each of the first
-    ``ease_frames`` frames is nudged, per RGB channel, onto a straight path from
-    the previous clip's last frame to the next clip's own colour at
-    ``ease_frames``; later frames keep their own look. ``current_raw`` is a
-    disposable view into the decoded seam-pair buffer, so this works in place.
+
+def _match_seam_colour(decoded, current_raw, frame, warmup):
+    """Ease B's colour in from A's.
+
+    B's copy of A frame ``frame`` (decoded frame ``frame + warmup``) can sit on
+    a different brightness or colour than A's own. B's first frames are shifted
+    by that difference per RGB channel, and the shift fades out over
+    ``SEAM_COLOUR_EASE_FRAMES`` so B keeps its own changes in light.
+    ``current_raw`` is a view into the decoded seam pair, so this works in place.
     """
-    current_n = int(current_raw.shape[0])
-    if int(previous_raw.shape[0]) < 1 or current_n < 2:
-        return current_raw
-
-    settle = min(int(ease_frames), current_n - 1)
-    start = previous_raw[-1, ..., :3].float().mean(dim=(0, 1)).tolist()
-    end = current_raw[settle, ..., :3].float().mean(dim=(0, 1)).tolist()
+    settle = min(SEAM_COLOUR_EASE_FRAMES, int(current_raw.shape[0]) - 1)
+    if warmup < 1 or settle < 1:
+        return
+    a = decoded[frame, ..., :3].float().mean(dim=(0, 1))
+    b = decoded[frame + warmup, ..., :3].float().mean(dim=(0, 1))
+    offset = (a - b).tolist()
     for k in range(settle):
-        t = k / settle
-        frame = current_raw[k, ..., :3]
-        mean = frame.float().mean(dim=(0, 1)).tolist()
+        weight = 1.0 - k / settle
         for c in range(3):
-            target = start[c] * (1.0 - t) + end[c] * t
-            frame[..., c].add_(target - mean[c]).clamp_(0.0, 1.0)
-    return current_raw
+            current_raw[k, ..., c].add_(offset[c] * weight).clamp_(0.0, 1.0)
 
 
 def _find_ffmpeg():
@@ -3277,16 +3274,10 @@ def _render_one_final_video_segment(
 
     prev = segments[i - 1]
     chain, meta = _build_pair_video(data_path, prev, curr)
-    decoded, previous_raw, current_raw, shift = _decode_pair_video(
-        vae, chain, meta
-    )
-    # The latent seam pair is no longer needed once VAE decode returned.  Drop
-    # it before photometric work so latent + large RGB temporaries do not overlap.
+    current_video, shift = _decode_pair_video(vae, chain, meta)
     del chain
     if progress is not None:
         progress.advance()
-    current_video = _correct_current_segment(previous_raw, current_raw)
-    del decoded, previous_raw, current_raw
     return _drop_next_lead(current_video, segments, i), int(shift)
 
 
