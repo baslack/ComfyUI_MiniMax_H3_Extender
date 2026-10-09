@@ -1351,7 +1351,7 @@ def _decode_pair_video(vae, chain, meta):
     return current_raw, -lead
 
 
-SEAM_CROSSFADE_FRAMES = 6
+SEAM_CROSSFADE_FRAMES = 10
 SEAM_SKIP_FRAMES = 4
 
 
