@@ -7,12 +7,12 @@ the only extra package.
 cd <this repo>
 $env:COMFYUI_PATH = "<ComfyUI checkout>"
 $env:PYTHONPATH   = "$env:COMFYUI_PATH;$PWD"
-$env:CUDA_VISIBLE_DEVICES = ""                    # keep the GPU free for ComfyUI
+$env:CUDA_VISIBLE_DEVICES = "-1"                  # hide the GPU (not "": that deletes the variable)
 <ComfyUI python> -m pytest tests/contract -m "not gpu"
 ```
 
-Drop `CUDA_VISIBLE_DEVICES` and `-m "not gpu"` to also run the `gpu` tests, and
-only do that while ComfyUI isn't generating.
+To also run the `gpu` tests, `Remove-Item Env:CUDA_VISIBLE_DEVICES` and drop
+`-m "not gpu"`, and only while ComfyUI isn't generating.
 
 - Tests go through the package's public surface only: node schemas (saved
   workflows depend on input order), the HTTP routes the frontend calls,
