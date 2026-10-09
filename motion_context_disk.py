@@ -61,7 +61,7 @@ from .motion_context_ram import (
     _streams_from_latent,
 )
 
-BUILD = "motion-context-disk-v3.0.8"
+BUILD = "motion-context-disk-v3.0.12"
 PREVIEW_AUDIO_MODE = "pcm_single_aac_gain_chain_v3_entry_ramp"
 CACHE_VERSION = 12
 PREVIEW_ROTATION_SLOTS = 3
@@ -3504,11 +3504,53 @@ def _video_editor_batch_id(data_path, segment_paths, segments, export_profile):
     return hashlib.sha256(raw).hexdigest()[:32]
 
 
-def _video_editor_source_id(data_path):
-    """Stable editor source id for one Extender cache owner across rerenders."""
+def _video_editor_legacy_source_id(data_path):
+    """3.0.9 identifier, retained only for migrating saved editor projects."""
     import hashlib
     raw = f"MiniMaxH3Extender|{Path(data_path).resolve()}".encode("utf-8")
     return hashlib.sha256(raw).hexdigest()[:32]
+
+
+def _video_editor_cache_variants(data_path):
+    """Canonical path and all three mode-specific cache paths for one node.
+
+    Motion ON/OFF and FL2VA have distinct physical caches but must identify a
+    single editor connection. Never merge different Extender node owners.
+    """
+    path = Path(data_path).resolve()
+    stem = path.stem
+    for suffix in ("_ref2va_independent", "_fl2va"):
+        if stem.endswith(suffix):
+            stem = stem[:-len(suffix)]
+            break
+    canonical = path.with_name(stem + path.suffix)
+    return (canonical, canonical.with_name(stem + "_fl2va" + path.suffix),
+            canonical.with_name(stem + "_ref2va_independent" + path.suffix))
+
+
+def _video_editor_source_id(data_path):
+    """Mode-independent identity of the physical Extender node cache owner."""
+    return _video_editor_legacy_source_id(_video_editor_cache_variants(data_path)[0])
+
+
+def _video_editor_source_aliases(data_path):
+    primary = _video_editor_source_id(data_path)
+    return [alias for alias in dict.fromkeys(
+        _video_editor_legacy_source_id(path) for path in _video_editor_cache_variants(data_path)
+    ) if alias != primary]
+
+
+_EDITOR_SYNC_REVISION_LOCK = threading.Lock()
+_EDITOR_SYNC_LAST_REVISION = 0
+
+
+def _video_editor_next_revision():
+    """Strictly ordered snapshots within a process, also safe across restarts."""
+    import time
+    global _EDITOR_SYNC_LAST_REVISION
+    with _EDITOR_SYNC_REVISION_LOCK:
+        _EDITOR_SYNC_LAST_REVISION = max(time.time_ns(), _EDITOR_SYNC_LAST_REVISION + 1)
+        return str(_EDITOR_SYNC_LAST_REVISION)
 
 
 def _video_editor_project_order(manifest, segments):
@@ -3576,10 +3618,13 @@ def _video_editor_batch_payload(
         })
     batch_id = _video_editor_batch_id(data_path, segment_paths, segments, export_profile)
     return {
-        "version": 1,
+        "version": 2,
         "source": "MiniMaxH3Extender",
         "source_id": str(source_id),
+        "source_aliases": _video_editor_source_aliases(data_path),
         "batch_id": str(batch_id),
+        "snapshot_revision": _video_editor_next_revision(),
+        "state_complete": True,
         "sync_mode": str(sync_mode),
         "project_order": project_order,
         "fps": float(fps),
@@ -3631,8 +3676,9 @@ def _export_video_editor_batch_from_cached_segments(
             prompt=prompt,
             progress=None,
             save_wav=True,
+            editor_temporary=True,
         )
-        return _video_editor_batch_payload(
+        batch = _video_editor_batch_payload(
             data_path=data_path,
             manifest=manifest,
             segment_paths=segment_paths,
@@ -3643,6 +3689,8 @@ def _export_video_editor_batch_from_cached_segments(
             export_profile=export_profile,
             sync_mode=sync_mode,
         )
+        batch["editor_temp_dir"] = str(_clips_dir.resolve())
+        return batch
     finally:
         for item in [raw_audio, *individual_audio_paths]:
             try:
@@ -3788,6 +3836,7 @@ def _export_final_from_exact_segment_caches(
                         prompt=prompt,
                         progress=progress,
                         save_wav=bool(editor_batch_requested),
+                        editor_temporary=bool(editor_batch_requested and not save_individual_clips),
                     )
                     individual_export_info = {
                         "individual_clips_dir": str(clips_dir),
@@ -3805,6 +3854,10 @@ def _export_final_from_exact_segment_caches(
                             export_profile=profile,
                             sync_mode="full",
                         )
+                        if not save_individual_clips:
+                            individual_export_info["video_editor_batch"]["editor_temp_dir"] = str(clips_dir.resolve())
+                            individual_export_info.pop("individual_clips_dir", None)
+                            individual_export_info.pop("individual_clips_count", None)
                     _LOG.info(
                         "H3 individual clips exported: clips=%d dir=%s editor=%s",
                         len(clip_paths), clips_dir, bool(editor_batch_requested),
@@ -3867,6 +3920,7 @@ def _export_individual_final_clips_from_pcm(
     prompt=None,
     progress=None,
     save_wav=False,
+    editor_temporary=False,
 ):
     """Mux already-final video sidecars with PCM captured during final assembly.
 
@@ -3886,7 +3940,15 @@ def _export_individual_final_clips_from_pcm(
         return None, [], []
 
     extension = _full_batch_export_profile_extension(profile)
-    final_dir = _next_individual_clips_dir(output_path)
+    if editor_temporary:
+        # This batch is an intermediate bridge payload, not a user-requested
+        # individual-clip export. The Video Editor copies its media to its
+        # managed store before deleting the temporary source directory.
+        temporary_root = _ensure_cache_root() / "_editor_sync_temp"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        final_dir = temporary_root / f"editor_sync_{uuid.uuid4().hex}"
+    else:
+        final_dir = _next_individual_clips_dir(output_path)
     staging_dir = final_dir.with_name(f".{final_dir.name}.{uuid.uuid4().hex[:10]}.tmp")
     staging_dir.mkdir(parents=True, exist_ok=False)
     staged_outputs = []
@@ -3946,6 +4008,8 @@ def _export_individual_final_clips_from_pcm(
             if progress is not None:
                 progress.advance()
 
+        if editor_temporary:
+            (staging_dir / ".h3_editor_sync.marker").write_text("MiniMaxH3EditorSyncV1", encoding="utf-8")
         os.replace(staging_dir, final_dir)
         outputs = [final_dir / item.name for item in staged_outputs]
         wav_outputs = [final_dir / item.name for item in staged_wavs]
@@ -5635,7 +5699,7 @@ class MiniMaxH3MotionContextDiskFinalDecode:
                 codec=codec, crf=crf, preset=preset, audio_bitrate=audio_bitrate,
                 unique_id=unique_id, workflow=workflow, prompt=prompt,
                 project_autosave_settings=project_autosave_settings,
-                save_individual_clips=bool(effective_save_individual_clips),
+                save_individual_clips=bool(save_individual_clips),
                 editor_batch_requested=bool(editor_batch_requested),
             )
         if sequence_mode == "fl2va":
@@ -5646,7 +5710,7 @@ class MiniMaxH3MotionContextDiskFinalDecode:
                 codec=codec, crf=crf, preset=preset, audio_bitrate=audio_bitrate,
                 unique_id=unique_id, workflow=workflow, prompt=prompt,
                 project_autosave_settings=project_autosave_settings,
-                save_individual_clips=bool(effective_save_individual_clips),
+                save_individual_clips=bool(save_individual_clips),
                 editor_batch_requested=bool(editor_batch_requested),
             )
         source_meta = _source_meta(manifest)
@@ -5878,7 +5942,7 @@ class MiniMaxH3MotionContextDiskFinalDecode:
             export_profile=export_profile,
             audio_bitrate=audio_bitrate,
             token=token,
-            save_individual_clips=bool(effective_save_individual_clips),
+            save_individual_clips=bool(save_individual_clips),
             editor_batch_requested=bool(editor_batch_requested),
             workflow=workflow,
             prompt=prompt,

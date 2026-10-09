@@ -1376,6 +1376,7 @@ def sync_fl2va_manifest(owner_id, fps: float, clip_ids):
     manifest["sequence_mode"] = "fl2va"
 
     wanted = [str(x) for x in (clip_ids or [])]
+    manifest["editor_clip_order"] = list(wanted)
     _cleanup_plan_video_cache(data_path, wanted)
     by_id = {
         str(desc.get("clip_id")): dict(desc)
@@ -1594,6 +1595,7 @@ def export_fl2va_final(
     require_continuity=True,
     project_autosave_settings=None,
     save_individual_clips=False,
+    editor_batch_requested=False,
 ):
     """Decode FL2VA plans as independent hard cuts.
 
@@ -1767,6 +1769,52 @@ def export_fl2va_final(
         d._embed_final_metadata_in_place(autosave_path, workflow=workflow, prompt=prompt)
         progress.advance()
 
+        editor_batch = None
+        if bool(editor_batch_requested):
+            try:
+                editor_segment_paths = [
+                    _plan_final_video_cache_path(
+                        data_path, str(desc.get("clip_id") or ""), clip_by_clip_export_profile
+                    )
+                    for desc in timeline_segments
+                ]
+                missing = [str(path) for path in editor_segment_paths if not path.exists() or path.stat().st_size <= 0]
+                if missing:
+                    raise FileNotFoundError(
+                        "FL2VA Video Editor bridge: exact-final sidecar missing: " + ", ".join(missing)
+                    )
+                editor_batch = d._export_video_editor_batch_from_cached_segments(
+                    ffmpeg=ffmpeg,
+                    segment_paths=editor_segment_paths,
+                    data_path=data_path,
+                    manifest=manifest,
+                    segments=timeline_segments,
+                    fps=float(fps),
+                    output_path=autosave_path,
+                    export_profile=clip_by_clip_export_profile,
+                    audio_bitrate=audio_bitrate,
+                    token=f"fl2va_editor_{os.urandom(5).hex()}",
+                    workflow=workflow,
+                    prompt=prompt,
+                    source_meta=source_meta,
+                    sync_mode="incremental",
+                )
+            except Exception as exc:
+                d._LOG.error("FL2VA Video Editor Clip-by-Clip bridge failed: %s", exc)
+                editor_batch = {
+                    "version": 1,
+                    "source": "MiniMaxH3Extender",
+                    "source_id": d._video_editor_source_id(data_path),
+                    "batch_id": d._video_editor_batch_id(
+                        data_path, [], timeline_segments, clip_by_clip_export_profile
+                    ),
+                    "sync_mode": "incremental",
+                    "project_order": d._video_editor_project_order(manifest, timeline_segments),
+                    "fps": float(fps),
+                    "clips": [],
+                    "error": str(exc),
+                }
+
         item = d._comfy_media_item(preview_path, fps, "temp")
         progress.finish()
         return {
@@ -1782,7 +1830,10 @@ def export_fl2va_final(
                     "color_preview_baked": False,
                 }],
             },
-            "result": (d._video_output_from_path(autosave_path),),
+            "result": (
+                d._video_output_from_path(autosave_path),
+                editor_batch if bool(editor_batch_requested) else None,
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -1795,7 +1846,7 @@ def export_fl2va_final(
         total=max(
             8,
             5 + len(segments) * 2
-            + (len(segments) if bool(save_individual_clips) else 0),
+            + (len(segments) if (bool(save_individual_clips) or bool(editor_batch_requested)) else 0),
         ),
     )
     requested_profile = d.normalize_full_batch_export_profile({
@@ -1949,11 +2000,13 @@ def export_fl2va_final(
         audio_bitrate=audio_bitrate,
         token=token,
         save_individual_clips=bool(save_individual_clips),
+        editor_batch_requested=bool(editor_batch_requested),
         workflow=workflow,
         prompt=prompt,
         progress=progress,
         source_meta=source_meta,
         source_segment_path=source_final_segment,
+        manifest=manifest,
     )
 
     d._embed_final_metadata_in_place(output_path, workflow=workflow, prompt=prompt)
@@ -1985,5 +2038,8 @@ def export_fl2va_final(
                 "color_preview_baked": False,
             }],
         },
-        "result": (d._video_output_from_path(output_path),),
+        "result": (
+            d._video_output_from_path(output_path),
+            individual_export_info.get("video_editor_batch") if bool(editor_batch_requested) else None,
+        ),
     }

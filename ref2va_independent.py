@@ -34,6 +34,7 @@ def sync_manifest(owner_id, fps: float, clip_ids):
     manifest = dict(manifest)
     manifest["sequence_mode"] = SEQUENCE_MODE
     wanted = [str(x) for x in (clip_ids or [])]
+    manifest["editor_clip_order"] = list(wanted)
 
     # Reuse FL2VA's per-plan decoded sidecar layout. The physical latent owner is
     # different, so the two modes can never collide despite sharing the helper.
@@ -825,6 +826,7 @@ def run(
                 color_adjustment=cfg.get("color_adjustment"),
             )
             statuses.append(f"Ref2VA independent clip {i + 1} resumed from checkpoint")
+            e._cleanup_full_batch_aimdo_between_clips("Ref2VA Motion OFF", i)
             continue
 
         e._send_extender_progress(
@@ -1089,6 +1091,7 @@ def run(
                 export_profile=active_export_profile,
                 color_adjustment=cfg.get("color_adjustment"),
             )
+            e._cleanup_full_batch_aimdo_between_clips("Ref2VA Motion OFF", i)
 
         e._send_extender_progress(
             owner, i, len(clips), "complete",
