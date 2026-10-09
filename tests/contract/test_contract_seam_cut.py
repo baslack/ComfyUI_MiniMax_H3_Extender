@@ -1,13 +1,18 @@
-"""Seam contract: Final Decode starts the next clip right after the motion-context overlap.
+"""Seam contract: the next clip takes over where its re-created overlap is in step.
 
-The next clip's overlap frames re-create the previous clip's last frames, so
-starting it any earlier shows one of those frames twice: a visible stall.
+The next clip re-creates the previous clip's last frames (the motion-context
+overlap), but not in step everywhere: it is often a frame ahead at the very
+end, so cutting there makes the picture jump forward. Final Decode crossfades
+from the previous clip into the next one around the overlap frame where the
+two match best. The previous clip loses as many frames as the next one gains.
 """
 from __future__ import annotations
 
 import importlib
 
 import torch
+
+PREV, WARM, CONTINUED = 22, 17, 12
 
 
 class DecodedVAE:
@@ -18,29 +23,51 @@ class DecodedVAE:
         return self.frames
 
 
-def _walking_pair(prev_frames=22, warmup=17, continued=12):
-    """A square walking right; the overlap replays A's tail, then B steps 1.4x further.
+def _square(x):
+    frame = torch.zeros(96, 448, 3)
+    frame[32:64, x:x + 32] = 1.0
+    return frame
 
-    This is the case the removed early-shift heuristic answered by starting B one
-    frame early, on the replayed copy of A's last frame.
-    """
-    xs = [3 * t for t in range(prev_frames)]
-    xs += [3 * t for t in range(prev_frames - warmup, prev_frames)]
-    xs += [xs[prev_frames - 1] + 4.2 + 3 * t for t in range(continued)]
-    frames = torch.zeros(len(xs), 64, 192, 3)
-    for i, x in enumerate(xs):
-        frames[i, 20:28, round(x):round(x) + 8] = 1.0
-    meta = {"previous_frames": prev_frames, "warmup_frames": warmup, "continued_frames": continued,
-            "decode_frames": len(xs)}
+
+def _pair(in_step_at):
+    """A walks right; B's overlap copy runs one step ahead except at ``in_step_at``."""
+    a = [8 * t for t in range(PREV)]
+    b_overlap = [8 * t if t == in_step_at else 8 * (t + 1) for t in range(PREV - WARM, PREV)]
+    b_new = [8 * (PREV + 1 + t) for t in range(CONTINUED)]
+    frames = torch.stack([_square(x) for x in a + b_overlap + b_new])
+    meta = {"previous_frames": PREV, "warmup_frames": WARM, "continued_frames": CONTINUED,
+            "decode_frames": int(frames.shape[0])}
     return frames, meta
 
 
-def test_next_clip_starts_right_after_the_overlap(ext):
+def test_next_clip_takes_over_around_the_best_aligned_overlap_frame(ext):
     d = importlib.import_module(f"{ext.pkg.__name__}.motion_context_disk")
-    frames, meta = _walking_pair()
-    _, previous_raw, current_raw, shift = d._decode_pair_video(DecodedVAE(frames), None, meta)
-    start = meta["previous_frames"] + meta["warmup_frames"]
-    assert shift == 0
-    assert torch.equal(previous_raw, frames[:meta["previous_frames"]])
-    assert torch.equal(current_raw, frames[start:start + meta["continued_frames"]])
-    assert not torch.equal(current_raw[0], previous_raw[-1])
+    frames, meta = _pair(in_step_at=PREV - 6)
+    source = frames.clone()
+
+    with torch.inference_mode():
+        _, previous_raw, current_raw, shift = d._decode_pair_video(DecodedVAE(frames), None, meta)
+
+    fade = d.SEAM_CROSSFADE_FRAMES
+    cut = PREV - 6 - fade // 2
+    lead = PREV - cut
+    assert shift == -lead
+    assert previous_raw.shape[0] == PREV - lead
+    assert current_raw.shape[0] == CONTINUED + lead
+    for j in range(fade):
+        a_weight = 1.0 - (j + 1) / (fade + 1)
+        expected = torch.lerp(source[cut + j + WARM], source[cut + j], a_weight)
+        assert torch.allclose(current_raw[j], expected, atol=1e-6)
+    assert torch.equal(current_raw[fade:], source[cut + fade + WARM:PREV + WARM + CONTINUED])
+
+
+def test_the_previous_clip_loses_what_the_next_clip_gains(ext):
+    d = importlib.import_module(f"{ext.pkg.__name__}.motion_context_disk")
+    segments = [
+        {"frames": 124},
+        {"frames": 124, "trim_frames": 22, "seam_lead": 9},
+        {"frames": 124, "trim_frames": 22, "seam_lead": 5},
+    ]
+    visible = [d._visible_frames(segments, i) for i in range(3)]
+    assert visible == [124 - 9, 102 + 9 - 5, 102 + 5]
+    assert sum(visible) == d._final_frame_count(segments)
