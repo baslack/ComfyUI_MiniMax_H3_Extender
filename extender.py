@@ -152,6 +152,7 @@ PROJECT_SUPPORTED_VERSIONS = {1, 2, 3, 4}
 PROJECT_JSON_MAX_BYTES = 16 * 1024 * 1024
 PROJECT_DOWNLOAD_TTL_SECONDS = 2 * 60 * 60
 PROJECT_COPY_CHUNK = 8 * 1024 * 1024
+PROJECT_IMPORT_FREE_SPACE_MARGIN = 1024 * 1024 * 1024
 MAX_IMAGE_REFS = MAX_REFERENCE_SLOTS
 REFS_JSON_VERSION = 2
 MAX_REF_UPLOAD_BYTES = 256 * 1024 * 1024
@@ -3340,6 +3341,16 @@ def _project_temp_root():
     return root
 
 
+def _check_project_import_space(nbytes):
+    """Refuse imports that would leave less than the margin free on the cache drive."""
+    free = shutil.disk_usage(_project_temp_root()).free
+    if int(nbytes) > free - PROJECT_IMPORT_FREE_SPACE_MARGIN:
+        raise ValueError(
+            f"MiniMax H3 Extender Project: importing needs {int(nbytes) / 2**30:.1f} GiB but only "
+            f"{max(0, free - PROJECT_IMPORT_FREE_SPACE_MARGIN) / 2**30:.1f} GiB is free on the cache drive."
+        )
+
+
 def _cleanup_project_downloads():
     now = time.time()
     stale = []
@@ -4175,6 +4186,9 @@ def _import_project_archive(owner_id, archive_path):
                     raise ValueError(
                         f"MiniMax H3 Extender Project: unsafe ZIP entry '{info.filename}'."
                     )
+            # Declared sizes bound extraction (zipfile never yields more than
+            # file_size per entry), so this also stops decompression bombs.
+            _check_project_import_space(sum(int(info.file_size) for info in zf.infolist()))
 
             names = set(zf.namelist())
             if "project.json" not in names:
@@ -7341,6 +7355,10 @@ if getattr(PromptServer, "instance", None) is not None:
                             chunk = await part.read_chunk(size=PROJECT_COPY_CHUNK)
                             if not chunk:
                                 break
+                            try:
+                                _check_project_import_space(len(chunk))
+                            except ValueError as exc:
+                                return web.json_response({"ok": False, "error": str(exc)}, status=400)
                             f.write(chunk)
                         f.flush()
                         os.fsync(f.fileno())
