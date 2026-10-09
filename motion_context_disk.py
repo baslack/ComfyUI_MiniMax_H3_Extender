@@ -1457,7 +1457,7 @@ def _decode_pair_video(vae, chain, meta):
         raise RuntimeError("Disk Final Decode: seam crop lies outside decoded pair.")
 
     current_raw = decoded[start:end]
-    _match_seam_colour(decoded, current_raw, prev_frames - max(lead, 1), warmup)
+    _match_seam_colour(decoded, current_raw, prev_frames, warmup, lead)
     if lead:
         # Fade from A's real frames into B's re-created ones over the first frames.
         for j in range(SEAM_CROSSFADE_FRAMES):
@@ -1492,25 +1492,39 @@ def _aligned_seam_lead(decoded, prev_frames, warmup):
 SEAM_COLOUR_EASE_FRAMES = 12
 
 
-def _match_seam_colour(decoded, current_raw, frame, warmup):
-    """Ease B's colour in from A's.
-
-    B's copy of A frame ``frame`` (decoded frame ``frame + warmup``) can sit on
-    a different brightness or colour than A's own. B's first frames are shifted
-    by that difference per RGB channel, and the shift fades out over
-    ``SEAM_COLOUR_EASE_FRAMES`` so B keeps its own changes in light.
-    ``current_raw`` is a view into the decoded seam pair, so this works in place.
-    """
-    settle = min(SEAM_COLOUR_EASE_FRAMES, int(current_raw.shape[0]) - 1)
-    if warmup < 1 or settle < 1:
-        return
+def _seam_colour_offset(decoded, frame, warmup):
+    """Per-channel colour of A frame ``frame`` minus B's copy of it."""
     a = decoded[frame, ..., :3].float().mean(dim=(0, 1))
     b = decoded[frame + warmup, ..., :3].float().mean(dim=(0, 1))
-    offset = (a - b).tolist()
-    for k in range(settle):
-        weight = 1.0 - k / settle
+    return (a - b).tolist()
+
+
+def _match_seam_colour(decoded, current_raw, prev_frames, warmup, lead):
+    """Keep B on A's brightness and colour through the seam.
+
+    B's copy of A's frames sits a little brighter or darker and wobbles from
+    frame to frame. Each B frame that is crossfaded with A is shifted, per RGB
+    channel, onto A's frame at that instant, so the crossfade only changes the
+    picture, not the light. The last shift then fades out over
+    ``SEAM_COLOUR_EASE_FRAMES`` so B settles into its own colour.
+    ``current_raw`` is a view into the decoded seam pair, so this works in place.
+    """
+    if warmup < 1:
+        return
+    first = prev_frames - lead
+    matched = min(lead, SEAM_CROSSFADE_FRAMES)
+    offset = None
+    for k in range(matched):
+        offset = _seam_colour_offset(decoded, first + k, warmup)
         for c in range(3):
-            current_raw[k, ..., c].add_(offset[c] * weight).clamp_(0.0, 1.0)
+            current_raw[k, ..., c].add_(offset[c]).clamp_(0.0, 1.0)
+    if offset is None:
+        offset = _seam_colour_offset(decoded, first - 1, warmup)
+    settle = min(SEAM_COLOUR_EASE_FRAMES, int(current_raw.shape[0]) - matched)
+    for k in range(settle):
+        weight = 1.0 - (k + 1) / (settle + 1)
+        for c in range(3):
+            current_raw[matched + k, ..., c].add_(offset[c] * weight).clamp_(0.0, 1.0)
 
 
 def _find_ffmpeg():
