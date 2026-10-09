@@ -1033,6 +1033,57 @@ def _apply_clip_settings(manifest_path, manifest, index, clip_name, saturation, 
     return manifest
 
 
+HARD_CUT_SEQUENCE = "ref2va_independent"
+
+
+def _drop_plan_caches(data_path, clip_ids):
+    from . import fl2va_engine
+    for clip_id in clip_ids:
+        if clip_id:
+            fl2va_engine._invalidate_plan_video_cache(data_path, clip_id)
+
+
+def _set_chain_mode(data_path, manifest_path, manifest, chain_mode):
+    """The first Join decides how Final Decode joins the chain; changing it restarts the chain."""
+    wanted = HARD_CUT_SEQUENCE if chain_mode == "hard_cut" else "ref2va"
+    if str(manifest.get("sequence_mode") or "ref2va") == wanted:
+        return manifest
+    segments = manifest.get("segments", [])
+    if segments:
+        _drop_plan_caches(data_path, [str(x.get("clip_id") or "") for x in segments])
+        manifest = _truncate_chain(data_path, manifest_path, manifest, 0)
+    manifest = dict(manifest)
+    manifest["sequence_mode"] = wanted
+    manifest["updated_at"] = time.time()
+    _write_json_atomic(manifest_path, manifest)
+    return manifest
+
+
+def _apply_cut_settings(data_path, manifest_path, manifest, index, first_frame_from_previous):
+    """Hard-cut clips get a stable id, and hide a first frame copied from the previous clip."""
+    if manifest.get("sequence_mode") != HARD_CUT_SEQUENCE:
+        return manifest
+    segments = [dict(x) for x in manifest.get("segments", [])]
+    desc = segments[index]
+    clip_id = str(desc.get("clip_id") or f"clip_{index + 1}")
+    offset = 1 if bool(first_frame_from_previous) and index > 0 else 0
+    source_frames = int(desc.get("source_frames", desc.get("frames", 0)) or 0)
+    if desc.get("clip_id") == clip_id and int(desc.get("visible_offset", 0) or 0) == offset:
+        return manifest
+    if int(desc.get("visible_offset", 0) or 0) != offset:
+        _drop_plan_caches(data_path, [clip_id])
+    desc["clip_id"] = clip_id
+    desc["source_frames"] = source_frames
+    desc["visible_offset"] = offset
+    desc["frames"] = source_frames - offset
+    manifest = dict(manifest)
+    manifest["segments"] = segments
+    manifest["final_frame_count"] = _final_frame_count(segments)
+    manifest["updated_at"] = time.time()
+    _write_json_atomic(manifest_path, manifest)
+    return manifest
+
+
 class MiniMaxH3MotionContextDiskJoin:
     @classmethod
     def INPUT_TYPES(cls):
@@ -1056,6 +1107,10 @@ class MiniMaxH3MotionContextDiskJoin:
                 "saturation": ("FLOAT", {"default": 100.0, "min": 0.0, "max": 200.0, "step": 1.0}),
                 "contrast": ("FLOAT", {"default": 100.0, "min": 50.0, "max": 150.0, "step": 1.0}),
                 "brightness": ("FLOAT", {"default": 100.0, "min": 50.0, "max": 150.0, "step": 1.0}),
+                "chain_mode": (["motion_context", "hard_cut"], {"default": "motion_context",
+                    "tooltip": "Set on the first Join for the whole chain. motion_context: clips overlap through Motion Context RAM. hard_cut: independent clips joined by cuts, e.g. FL2VA."}),
+                "first_frame_from_previous": ("BOOLEAN", {"default": False,
+                    "tooltip": "hard_cut only: this clip starts from the previous clip's last frame. Its first frame is hidden so the cut doesn't repeat a frame."}),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
@@ -1087,6 +1142,8 @@ class MiniMaxH3MotionContextDiskJoin:
         saturation=None,
         contrast=None,
         brightness=None,
+        chain_mode=None,
+        first_frame_from_previous=None,
     ):
         try:
             data_path, manifest_path, manifest, mode, stop, index = _effective_state(
@@ -1117,7 +1174,7 @@ class MiniMaxH3MotionContextDiskJoin:
         needed = []
         if samples is None:
             needed.append("samples")
-        if index > 0 and trim_frames is None:
+        if index > 0 and trim_frames is None and manifest.get("sequence_mode") != HARD_CUT_SEQUENCE:
             needed.append("trim_frames")
         return needed
 
@@ -1139,6 +1196,8 @@ class MiniMaxH3MotionContextDiskJoin:
         saturation=None,
         contrast=None,
         brightness=None,
+        chain_mode=None,
+        first_frame_from_previous=None,
     ):
         data_path, manifest_path, manifest, mode, stop, index = _effective_state(
             previous_cache, run_mode, fps, unique_id
@@ -1168,6 +1227,11 @@ class MiniMaxH3MotionContextDiskJoin:
             raise RuntimeError(
                 f"MiniMax H3 Disk Join: invalid chain index {index}/{len(segments)}."
             )
+
+        if index == 0 and chain_mode is not None:
+            manifest = _set_chain_mode(data_path, manifest_path, manifest, chain_mode)
+            segments = [dict(x) for x in manifest.get("segments", [])]
+        hard_cut = manifest.get("sequence_mode") == HARD_CUT_SEQUENCE
 
         existing = index < len(segments)
 
@@ -1204,8 +1268,10 @@ class MiniMaxH3MotionContextDiskJoin:
             # invalidates/truncates the entire downstream tail in one operation.
             if samples is None:
                 raise RuntimeError("MiniMax H3 Disk Join: active clip needs samples.")
-            trim = 0 if index == 0 else int(trim_frames if trim_frames is not None else 22)
+            trim = 0 if index == 0 or hard_cut else int(trim_frames if trim_frames is not None else 22)
 
+            if hard_cut:
+                _drop_plan_caches(data_path, [str(x.get("clip_id") or "") for x in segments[index:]] + [f"clip_{index + 1}"])
             if existing or len(segments) > index:
                 manifest = _truncate_chain(data_path, manifest_path, manifest, index)
                 segments = [dict(x) for x in manifest.get("segments", [])]
@@ -1250,6 +1316,7 @@ class MiniMaxH3MotionContextDiskJoin:
                 else f"clip {index + 1} candidate cached"
             )
 
+        manifest = _apply_cut_settings(data_path, manifest_path, manifest, index, first_frame_from_previous)
         manifest = _apply_clip_settings(
             manifest_path, manifest, index, clip_name, saturation, contrast, brightness
         )

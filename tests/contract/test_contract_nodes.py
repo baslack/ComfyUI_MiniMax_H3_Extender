@@ -63,6 +63,7 @@ def test_extender_optional_sockets_only_grow_at_the_end(ext):
         ], []),
         ("MiniMaxH3MotionContextDiskJoin", ["samples", "validated", "run_mode", "fps"], [
             "previous_cache", "trim_frames", "clip_name", "saturation", "contrast", "brightness",
+            "chain_mode", "first_frame_from_previous",
         ]),
         # context_latent is optional so the first clip of a chain runs without a previous clip.
         ("MiniMaxH3MotionContextRAM", ["conditioning", "latent", "context_length", "audio_context_length"], ["context_latent"]),
