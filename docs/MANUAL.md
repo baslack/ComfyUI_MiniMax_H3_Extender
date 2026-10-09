@@ -120,7 +120,7 @@ the node; delete that folder (or use **New Project**) to reclaim space.
 An alternative to the Extender node: each step is an ordinary node, so clips
 use ComfyUI's own samplers, schedulers, noise and LoRA loaders. The Extender
 node is unchanged. See `Workflow/MiniMax_H3_Graph_Ref2VA.json` and
-`Workflow/MiniMax_H3_Graph_FL2VA.json`.
+`Workflow/MiniMax_H3_Graph_Keyframe.json`.
 
 | Node | Does |
 |---|---|
@@ -168,14 +168,18 @@ filled in for you; pick `task_types` to set the tags yourself.
   3. Put the first-pass audio back on the refined video.
 
   A refined previous clip is shrunk automatically for the base pass.
-- **Keyframe clips (I2VA / FL2VA):** these have no motion context.
-  - Set `chain_mode` to `hard_cut` on the first Disk Join, so Final Decode
-    joins the clips with cuts.
-  - To continue a shot, start the next clip from the previous clip's last
-    frame (via **MiniMax H3 Tail From Latent**) and turn on its Join's
-    `first_frame_from_previous`, so that frame isn't shown twice.
+- **Keyframe clips (I2VA / FL2VA)** use the FL2VA model and the same chain
+  as Ref2VA clips:
+  - The first clip starts from a first frame.
+  - The next clip continues the shot through Motion Context RAM, so motion
+    and sound carry across the join. Keep music and ambience the same in
+    clips that continue a shot.
   - Give a clip a last frame only when it must end on a specific picture.
-    The cut then lands on that picture, so it has to fit the shot.
+- **Real cuts between shots:** set `chain_mode` to `hard_cut` on the first
+  Disk Join. A clip that starts from the previous clip's last frame (via
+  **MiniMax H3 Tail From Latent**) should turn on its Join's
+  `first_frame_from_previous`, so that frame isn't shown twice. A single
+  frame carries no motion, so the movement restarts at the cut.
 
 Continuing an existing video is not available with the graph nodes yet.
 

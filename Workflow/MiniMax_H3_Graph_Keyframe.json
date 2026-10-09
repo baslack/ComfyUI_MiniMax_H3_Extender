@@ -1,7 +1,7 @@
 {
-  "id": "3adca82e-c76d-4905-b879-95c5c00c3b98",
+  "id": "123fea6c-fd12-48eb-a89e-0e8c5a675937",
   "revision": 0,
-  "last_node_id": 38,
+  "last_node_id": 36,
   "last_link_id": 72,
   "nodes": [
     {
@@ -111,7 +111,7 @@
           "type": "CLIP",
           "links": [
             46,
-            63
+            64
           ]
         }
       ],
@@ -162,7 +162,7 @@
           "links": [
             37,
             47,
-            64
+            65
           ]
         }
       ],
@@ -209,7 +209,7 @@
           "links": [
             38,
             48,
-            65
+            66
           ]
         }
       ],
@@ -235,7 +235,7 @@
         82
       ],
       "flags": {},
-      "order": 9,
+      "order": 7,
       "mode": 0,
       "inputs": [
         {
@@ -270,10 +270,11 @@
           "type": "MODEL",
           "links": [
             40,
-            62
+            63
           ]
         }
       ],
+      "title": "Sigma shifts (video / audio)",
       "properties": {
         "Node name for S&R": "MiniMaxH3SigmaShift"
       },
@@ -284,8 +285,7 @@
       "widgets_values_named": {
         "shift_video": 12,
         "shift_audio": 3
-      },
-      "title": "Sigma shifts (video / audio)"
+      }
     },
     {
       "id": 6,
@@ -398,7 +398,7 @@
           "type": "INT",
           "links": [
             49,
-            66
+            67
           ]
         },
         {
@@ -407,7 +407,7 @@
           "type": "INT",
           "links": [
             50,
-            67
+            68
           ]
         },
         {
@@ -458,7 +458,7 @@
       ],
       "size": [
         282.798828125,
-        102
+        314
       ],
       "flags": {},
       "order": 5,
@@ -513,7 +513,7 @@
       }
     },
     {
-      "id": 32,
+      "id": 30,
       "type": "PreviewAny",
       "pos": [
         1300,
@@ -524,14 +524,14 @@
         122
       ],
       "flags": {},
-      "order": 11,
+      "order": 9,
       "mode": 0,
       "inputs": [
         {
           "localized_name": "source",
           "name": "source",
           "type": "*",
-          "link": 59
+          "link": 60
         }
       ],
       "outputs": [
@@ -550,7 +550,7 @@
       "widgets_values_named": {}
     },
     {
-      "id": 33,
+      "id": 31,
       "type": "MiniMaxH3MotionContextDiskFinalDecode",
       "pos": [
         2400,
@@ -558,10 +558,10 @@
       ],
       "size": [
         397.7486328125,
-        314
+        509
       ],
       "flags": {},
-      "order": 14,
+      "order": 12,
       "mode": 0,
       "inputs": [
         {
@@ -712,18 +712,18 @@
       }
     },
     {
-      "id": 35,
-      "type": "155036ed-9980-4e23-84b5-1ce7fe4c3358",
+      "id": 33,
+      "type": "bc37589f-6a48-49f0-930d-3a3b59a38650",
       "pos": [
         1300,
         0
       ],
       "size": [
         298.677734375,
-        532
+        552
       ],
       "flags": {},
-      "order": 10,
+      "order": 8,
       "mode": 0,
       "inputs": [
         {
@@ -819,6 +819,14 @@
           "link": null
         },
         {
+          "label": "previous_samples",
+          "localized_name": "context_latent",
+          "name": "context_latent",
+          "shape": 7,
+          "type": "LATENT",
+          "link": null
+        },
+        {
           "localized_name": "noise_seed",
           "name": "noise_seed",
           "type": "INT",
@@ -890,7 +898,7 @@
           "name": "composed_prompt",
           "type": "STRING",
           "links": [
-            59
+            60
           ]
         },
         {
@@ -898,30 +906,30 @@
           "name": "cache",
           "type": "H3_MOTION_DISK_CACHE",
           "links": [
-            70
+            69
           ]
         },
         {
-          "localized_name": "last_frame",
-          "name": "last_frame",
-          "type": "IMAGE",
+          "localized_name": "cached_samples",
+          "name": "cached_samples",
+          "type": "LATENT",
           "links": [
-            69
+            70
           ]
         }
       ],
-      "title": "Clip 1 (MiniMax H3 FL2VA Clip)",
+      "title": "Clip 1 (MiniMax H3 Keyframe Clip)",
       "properties": {
         "previewExposures": []
       },
       "widgets_values": [
         "[Shot 1] Live-action, cinematic, the young woman with short red hair and a yellow raincoat shown in <Picture 1> stands at the counter of a dim harbour cafe, keeping her appearance, clothing and the room behind her. She (S mara) smiles and says, <d>[English] Thanks, that's lovely.</d> She picks up a coffee cup from the counter, turns to her left and starts walking toward the window tables. The camera pans left with small amplitude at slow speed to follow her.",
         "Quiet cafe chatter and the clink of a cup on the counter; rain patters on the windows.",
-        "",
+        "Soft acoustic guitar at a slow tempo, steady throughout.",
         1344,
         768,
         124,
-        2001,
+        3001,
         false,
         "counter",
         100,
@@ -929,46 +937,46 @@
         100
       ],
       "widgets_values_named": {
-        "integrated_multimodal_description": "[Shot 1] Live-action, cinematic, a woman (S woman) begins in the pose and framing of Picture 1, holding a closed black umbrella on a rainy street. The camera pulls out with small amplitude at slow speed as she lifts the umbrella, presses the runner up until the canopy opens, and says, <d>[English] Finally.</d> She steps beneath it and settles into the pose and composition of Picture 2 at the end of the shot.",
-        "overall_soundscape": "Rain falls steadily on the pavement, followed by the click of the umbrella runner and the snap of the canopy opening.",
-        "non_diegetic_music": "",
+        "integrated_multimodal_description": "[Shot 1] Live-action, cinematic, the young woman with short red hair and a yellow raincoat shown in <Picture 1> stands at the counter of a dim harbour cafe, keeping her appearance, clothing and the room behind her. She (S mara) smiles and says, <d>[English] Thanks, that's lovely.</d> She picks up a coffee cup from the counter, turns to her left and starts walking toward the window tables. The camera pans left with small amplitude at slow speed to follow her.",
+        "overall_soundscape": "Quiet cafe chatter and the clink of a cup on the counter; rain patters on the windows.",
+        "non_diegetic_music": "Soft acoustic guitar at a slow tempo, steady throughout.",
         "width": 1344,
         "height": 768,
         "length": 124,
-        "noise_seed": 2001,
+        "noise_seed": 3001,
         "validated": false,
-        "clip_name": "open",
+        "clip_name": "counter",
         "saturation": 100,
         "contrast": 100,
         "brightness": 100
       }
     },
     {
-      "id": 36,
-      "type": "155036ed-9980-4e23-84b5-1ce7fe4c3358",
+      "id": 34,
+      "type": "bc37589f-6a48-49f0-930d-3a3b59a38650",
       "pos": [
         1850,
         0
       ],
       "size": [
         298.677734375,
-        146
+        166
       ],
       "flags": {},
-      "order": 12,
+      "order": 10,
       "mode": 0,
       "inputs": [
         {
           "name": "model",
           "type": "MODEL",
-          "link": 62
+          "link": 63
         },
         {
           "localized_name": "first_frame",
           "name": "first_frame",
           "shape": 7,
           "type": "IMAGE",
-          "link": 69
+          "link": null
         },
         {
           "localized_name": "last_frame",
@@ -1008,19 +1016,20 @@
           "localized_name": "clip",
           "name": "clip",
           "type": "CLIP",
-          "link": 63
+          "link": 64
         },
         {
           "localized_name": "vae",
           "name": "vae",
           "type": "VAE",
-          "link": 64
+          "link": 65
         },
         {
           "localized_name": "audio_vae",
           "name": "audio_vae",
+          "shape": 7,
           "type": "VAE",
-          "link": 65
+          "link": 66
         },
         {
           "localized_name": "width",
@@ -1029,7 +1038,7 @@
           "widget": {
             "name": "width"
           },
-          "link": 66
+          "link": 67
         },
         {
           "localized_name": "height",
@@ -1038,7 +1047,7 @@
           "widget": {
             "name": "height"
           },
-          "link": 67
+          "link": 68
         },
         {
           "localized_name": "length",
@@ -1048,6 +1057,14 @@
             "name": "length"
           },
           "link": null
+        },
+        {
+          "label": "previous_samples",
+          "localized_name": "context_latent",
+          "name": "context_latent",
+          "shape": 7,
+          "type": "LATENT",
+          "link": 70
         },
         {
           "localized_name": "noise_seed",
@@ -1063,7 +1080,7 @@
           "name": "previous_cache",
           "shape": 7,
           "type": "H3_MOTION_DISK_CACHE",
-          "link": 70
+          "link": 69
         },
         {
           "localized_name": "validated",
@@ -1133,24 +1150,24 @@
           ]
         },
         {
-          "localized_name": "last_frame",
-          "name": "last_frame",
-          "type": "IMAGE",
+          "localized_name": "cached_samples",
+          "name": "cached_samples",
+          "type": "LATENT",
           "links": null
         }
       ],
-      "title": "Clip 2 (MiniMax H3 FL2VA Clip)",
+      "title": "Clip 2 (MiniMax H3 Keyframe Clip)",
       "properties": {
         "previewExposures": []
       },
       "widgets_values": [
-        "[Shot 1] Live-action, cinematic, continuing from <Picture 1>, the young woman in the yellow raincoat carries her coffee to a small table by the rainy window, sits down and sets the cup in front of her. The camera trucks right with small amplitude at slow speed, keeping her in a medium shot as she looks out at the harbour.",
-        "Rain patters on the window; a chair scrapes softly and the cup clicks on the table.",
-        "Soft acoustic guitar at a slow tempo, fading out at the end.",
+        "[Shot 1] Live-action, cinematic, the young woman with short red hair and a yellow raincoat keeps walking with her coffee to a small table by the rainy window of the dim harbour cafe, sits down and sets the cup in front of her. The camera keeps panning left with small amplitude at slow speed, then settles on her in a medium shot as she looks out at the harbour.",
+        "Quiet cafe chatter continues and rain patters on the windows; a chair scrapes softly and the cup clicks on the table.",
+        "Soft acoustic guitar at a slow tempo, steady throughout.",
         1344,
         768,
         124,
-        2002,
+        3002,
         false,
         "window",
         100,
@@ -1158,22 +1175,22 @@
         100
       ],
       "widgets_values_named": {
-        "integrated_multimodal_description": "[Shot 1] Live-action, cinematic, the woman continues from Picture 1 under the open umbrella and walks along the wet street. The camera tracks beside her at slow speed as the rain eases, until she stops and turns into the framing of Picture 2 at the end of the shot.",
-        "overall_soundscape": "Footsteps splash through shallow puddles; rain thins to a light drizzle.",
-        "non_diegetic_music": "Soft acoustic guitar at a moderate tempo, fading out at the end.",
+        "integrated_multimodal_description": "[Shot 1] Live-action, cinematic, the young woman with short red hair and a yellow raincoat keeps walking with her coffee to a small table by the rainy window of the dim harbour cafe, sits down and sets the cup in front of her. The camera keeps panning left with small amplitude at slow speed, then settles on her in a medium shot as she looks out at the harbour.",
+        "overall_soundscape": "Quiet cafe chatter continues and rain patters on the windows; a chair scrapes softly and the cup clicks on the table.",
+        "non_diegetic_music": "Soft acoustic guitar at a slow tempo, steady throughout.",
         "width": 1344,
         "height": 768,
         "length": 124,
-        "noise_seed": 2002,
+        "noise_seed": 3002,
         "validated": false,
-        "clip_name": "walk",
+        "clip_name": "window",
         "saturation": 100,
         "contrast": 100,
         "brightness": 100
       }
     },
     {
-      "id": 37,
+      "id": 35,
       "type": "PreviewAny",
       "pos": [
         1850,
@@ -1184,7 +1201,7 @@
         122
       ],
       "flags": {},
-      "order": 13,
+      "order": 11,
       "mode": 0,
       "inputs": [
         {
@@ -1210,7 +1227,7 @@
       "widgets_values_named": {}
     },
     {
-      "id": 38,
+      "id": 36,
       "type": "MarkdownNote",
       "pos": [
         1300,
@@ -1218,20 +1235,20 @@
       ],
       "size": [
         900,
-        300
+        330
       ],
       "flags": {},
-      "order": 8,
+      "order": 6,
       "mode": 0,
       "inputs": [],
       "outputs": [],
       "title": "How this works",
       "properties": {},
       "widgets_values": [
-        "### MiniMax H3 graph nodes: keyframe clips (I2VA / FL2VA)\n- Clip 1 starts from a **first frame** image. Clip 2 starts from clip 1's real last frame (`last_frame` output), so every cut lands on a frame the model generated.\n- A clip's `last_frame` input is optional. Connect an image only when a shot must end on a specific picture (FL2VA); the model lands on it at the end of the clip.\n- Describe what happens after the first frame, not the frame itself. *MiniMax H3 Encode* writes the guide's alignment line; the **Composed prompt** preview shows it.\n- Clips are joined with cuts (`chain_mode` = hard_cut) and the handed-over frame isn't shown twice (`first_frame_from_previous`).\n- **Add a clip:** copy a clip node, connect the previous clip's `last_frame` and `cache`, and move Final Decode to the last clip. A pasted clip is an independent copy: changes made inside one clip don't reach the others.\n- Replace the **Load Image** placeholder with your own first frame."
+        "### MiniMax H3 graph nodes: keyframe clips (I2VA / FL2VA)\n- Clip 1 starts from a **first frame** image. Clip 2 continues the shot through **motion context**: it gets the last 22 frames of clip 1's video and audio, so motion and sound carry on across the join.\n- Each clip's `first_frame` and `last_frame` inputs are optional. Connect a last frame only when a shot must end on a specific picture (FL2VA).\n- Describe what happens, not the frames themselves. *MiniMax H3 Encode* writes the guide's alignment line; the **Composed prompt** preview shows it. Keep music and ambience the same in clips that continue a shot.\n- **Add a clip:** copy a clip node, connect the previous clip's `cache` and `cached_samples`, and move Final Decode to the last clip. A pasted clip is an independent copy: changes made inside one clip don't reach the others.\n- Replace the **Load Image** placeholder with your own first frame."
       ],
       "widgets_values_named": {
-        "text": "### MiniMax H3 graph nodes: FL2VA\n- Each clip runs from a **first frame** to a **last frame**. Clip 2 starts from clip 1's last decoded frame (`last_frame` output).\n- Describe the path between the frames, not the frames themselves. *MiniMax H3 Encode* writes the guide's alignment line from the clip length; the **Composed prompt** preview shows it.\n- FL2VA clips don't overlap, so `trim_frames` is fixed at 0 inside the clip.\n- **Add a clip:** copy a clip node, connect the previous clip's `last_frame` and `cache`, give it a last frame, and move Final Decode to the last clip.\n- Replace the **Load Image** placeholders with your own frames."
+        "text": "### MiniMax H3 graph nodes: keyframe clips (I2VA / FL2VA)\n- Clip 1 starts from a **first frame** image. Clip 2 continues the shot through **motion context**: it gets the last 22 frames of clip 1's video and audio, so motion and sound carry on across the join.\n- Each clip's `first_frame` and `last_frame` inputs are optional. Connect a last frame only when a shot must end on a specific picture (FL2VA).\n- Describe what happens, not the frames themselves. *MiniMax H3 Encode* writes the guide's alignment line; the **Composed prompt** preview shows it. Keep music and ambience the same in clips that continue a shot.\n- **Add a clip:** copy a clip node, connect the previous clip's `cache` and `cached_samples`, and move Final Decode to the last clip. A pasted clip is an independent copy: changes made inside one clip don't reach the others.\n- Replace the **Load Image** placeholder with your own first frame."
       },
       "color": "#432",
       "bgcolor": "#653"
@@ -1250,7 +1267,7 @@
       37,
       3,
       0,
-      33,
+      31,
       1,
       "VAE"
     ],
@@ -1258,7 +1275,7 @@
       38,
       4,
       0,
-      33,
+      31,
       2,
       "VAE"
     ],
@@ -1266,7 +1283,7 @@
       40,
       5,
       0,
-      35,
+      33,
       0,
       "MODEL"
     ],
@@ -1274,7 +1291,7 @@
       41,
       7,
       0,
-      35,
+      33,
       1,
       "IMAGE"
     ],
@@ -1282,7 +1299,7 @@
       46,
       2,
       0,
-      35,
+      33,
       6,
       "CLIP"
     ],
@@ -1290,7 +1307,7 @@
       47,
       3,
       0,
-      35,
+      33,
       7,
       "VAE"
     ],
@@ -1298,7 +1315,7 @@
       48,
       4,
       0,
-      35,
+      33,
       8,
       "VAE"
     ],
@@ -1306,7 +1323,7 @@
       49,
       6,
       0,
-      35,
+      33,
       9,
       "INT"
     ],
@@ -1314,95 +1331,95 @@
       50,
       6,
       1,
-      35,
+      33,
       10,
       "INT"
     ],
     [
-      59,
-      35,
+      60,
+      33,
       0,
-      32,
+      30,
       0,
       "STRING"
     ],
     [
-      62,
+      63,
       5,
       0,
-      36,
+      34,
       0,
       "MODEL"
     ],
     [
-      63,
+      64,
       2,
       0,
-      36,
+      34,
       6,
       "CLIP"
     ],
     [
-      64,
+      65,
       3,
       0,
-      36,
+      34,
       7,
       "VAE"
     ],
     [
-      65,
+      66,
       4,
       0,
-      36,
+      34,
       8,
       "VAE"
     ],
     [
-      66,
+      67,
       6,
       0,
-      36,
+      34,
       9,
       "INT"
     ],
     [
-      67,
+      68,
       6,
       1,
-      36,
+      34,
       10,
       "INT"
     ],
     [
       69,
-      35,
-      2,
-      36,
+      33,
       1,
-      "IMAGE"
-    ],
-    [
-      70,
-      35,
-      1,
-      36,
-      13,
+      34,
+      14,
       "H3_MOTION_DISK_CACHE"
     ],
     [
-      71,
-      36,
-      1,
+      70,
       33,
+      2,
+      34,
+      12,
+      "LATENT"
+    ],
+    [
+      71,
+      34,
+      1,
+      31,
       0,
       "H3_MOTION_DISK_CACHE"
     ],
     [
       72,
-      36,
+      34,
       0,
-      37,
+      35,
       0,
       "STRING"
     ]
@@ -1411,24 +1428,24 @@
   "definitions": {
     "subgraphs": [
       {
-        "id": "155036ed-9980-4e23-84b5-1ce7fe4c3358",
+        "id": "bc37589f-6a48-49f0-930d-3a3b59a38650",
         "version": 1,
         "state": {
           "lastGroupId": 0,
-          "lastNodeId": 38,
+          "lastNodeId": 36,
           "lastLinkId": 72,
           "lastRerouteId": 0
         },
         "revision": 0,
         "config": {},
-        "name": "MiniMax H3 FL2VA Clip",
+        "name": "MiniMax H3 Keyframe Clip",
         "inputNode": {
           "id": -10,
           "bounding": [
             -302.677734375,
-            -214,
+            -224,
             242.677734375,
-            428
+            448
           ]
         },
         "outputNode": {
@@ -1442,7 +1459,7 @@
         },
         "inputs": [
           {
-            "id": "4b371f8b-2f0a-43c1-9cb0-cc80ea5b65a1",
+            "id": "2801c968-93ad-4cd5-b20b-00af8d1aa7ef",
             "name": "model",
             "type": "MODEL",
             "linkIds": [
@@ -1454,7 +1471,7 @@
             ]
           },
           {
-            "id": "6ac5216e-74a3-4611-8f4c-59ed9799a562",
+            "id": "cea33a13-690a-42e5-9c34-7e830ed74370",
             "name": "first_frame",
             "type": "IMAGE",
             "linkIds": [
@@ -1468,7 +1485,7 @@
             ]
           },
           {
-            "id": "381d9056-4903-4fa9-aa57-b9bb73cf35dc",
+            "id": "7f19e643-ed55-43de-965f-961b3ced212a",
             "name": "last_frame",
             "type": "IMAGE",
             "linkIds": [
@@ -1482,7 +1499,7 @@
             ]
           },
           {
-            "id": "4e9ce19c-cf76-407c-bc09-69bf0291954d",
+            "id": "fdb91c15-d472-4eb4-b89e-81179b3e992f",
             "name": "integrated_multimodal_description",
             "type": "STRING",
             "linkIds": [
@@ -1495,7 +1512,7 @@
             ]
           },
           {
-            "id": "45e78cd8-8015-4815-a073-2b0a40afc92c",
+            "id": "7b997ad9-78de-4c9f-abd0-e6f691db0b40",
             "name": "overall_soundscape",
             "type": "STRING",
             "linkIds": [
@@ -1508,7 +1525,7 @@
             ]
           },
           {
-            "id": "70042d81-a034-4109-a206-27adf5a1b111",
+            "id": "6affc55b-7101-40f1-b934-1ba1140d1a74",
             "name": "non_diegetic_music",
             "type": "STRING",
             "linkIds": [
@@ -1521,7 +1538,7 @@
             ]
           },
           {
-            "id": "fb7f4c78-aaf6-41f3-a695-086681fa1990",
+            "id": "9f52bd08-73ef-4a94-9c29-c41d46d9e8f2",
             "name": "clip",
             "type": "CLIP",
             "linkIds": [
@@ -1534,12 +1551,11 @@
             ]
           },
           {
-            "id": "04fb826a-d49d-4044-a41d-630f14f294b0",
+            "id": "f26280e6-992e-4ebc-a29c-94b87f64ac5e",
             "name": "vae",
             "type": "VAE",
             "linkIds": [
-              6,
-              22
+              6
             ],
             "localized_name": "vae",
             "pos": [
@@ -1548,12 +1564,11 @@
             ]
           },
           {
-            "id": "e790644a-654c-48b7-be94-8d472e5264fb",
+            "id": "b31488ae-2f11-4248-8e90-caddf78c6f87",
             "name": "audio_vae",
             "type": "VAE",
             "linkIds": [
-              7,
-              23
+              7
             ],
             "localized_name": "audio_vae",
             "shape": 7,
@@ -1563,7 +1578,7 @@
             ]
           },
           {
-            "id": "c623ea4b-15f8-4940-9cb5-2eeb99e34642",
+            "id": "ba17f613-1de1-42ca-bf40-529add029ef3",
             "name": "width",
             "type": "INT",
             "linkIds": [
@@ -1576,7 +1591,7 @@
             ]
           },
           {
-            "id": "7a78e3fc-04c9-4698-a677-e939c9648f4d",
+            "id": "75f45de8-1498-4675-81d4-177dfb8ad367",
             "name": "height",
             "type": "INT",
             "linkIds": [
@@ -1589,7 +1604,7 @@
             ]
           },
           {
-            "id": "0a5b9eb7-6920-463c-af51-08f0f2eee40c",
+            "id": "9f799057-d54a-4274-9d90-d25f8796f71a",
             "name": "length",
             "type": "INT",
             "linkIds": [
@@ -1602,7 +1617,22 @@
             ]
           },
           {
-            "id": "79658b0c-1cb0-49aa-90e8-41f370e1c722",
+            "id": "4c4946ce-73e2-449f-886d-8275f6a2f3d6",
+            "name": "context_latent",
+            "type": "LATENT",
+            "linkIds": [
+              23
+            ],
+            "localized_name": "context_latent",
+            "label": "previous_samples",
+            "shape": 7,
+            "pos": [
+              51,
+              264
+            ]
+          },
+          {
+            "id": "a59cbf9d-c483-459d-844d-a9b0aed9d91c",
             "name": "noise_seed",
             "type": "INT",
             "linkIds": [
@@ -1611,11 +1641,11 @@
             "localized_name": "noise_seed",
             "pos": [
               51,
-              264
+              284
             ]
           },
           {
-            "id": "46eacd5d-3d03-4ef5-bbd4-17b646662dc5",
+            "id": "a5b2fe32-906b-4655-a483-df0b53fde959",
             "name": "previous_cache",
             "type": "H3_MOTION_DISK_CACHE",
             "linkIds": [
@@ -1625,11 +1655,11 @@
             "shape": 7,
             "pos": [
               51,
-              284
+              304
             ]
           },
           {
-            "id": "290b5737-e360-4dc5-ab30-5d2bab50f539",
+            "id": "2bae6e8f-135a-44f9-9d68-67f7785cfb6c",
             "name": "validated",
             "type": "BOOLEAN",
             "linkIds": [
@@ -1638,11 +1668,11 @@
             "localized_name": "validated",
             "pos": [
               51,
-              304
+              324
             ]
           },
           {
-            "id": "c1f785c4-ea41-44e9-a972-f1e4bc396ca4",
+            "id": "7c6ce3df-5256-4671-b24c-b6559604e575",
             "name": "clip_name",
             "type": "STRING",
             "linkIds": [
@@ -1652,11 +1682,11 @@
             "shape": 7,
             "pos": [
               51,
-              324
+              344
             ]
           },
           {
-            "id": "7ccc8b9a-d426-4d6a-883e-502eae153e09",
+            "id": "1a4584f0-1231-49dd-af01-c22075df72fc",
             "name": "saturation",
             "type": "FLOAT",
             "linkIds": [
@@ -1666,11 +1696,11 @@
             "shape": 7,
             "pos": [
               51,
-              344
+              364
             ]
           },
           {
-            "id": "012e0e12-253f-4659-bdda-e3f73e195703",
+            "id": "4e15b293-c5b3-4741-90a7-c6eb30e69c94",
             "name": "contrast",
             "type": "FLOAT",
             "linkIds": [
@@ -1680,11 +1710,11 @@
             "shape": 7,
             "pos": [
               51,
-              364
+              384
             ]
           },
           {
-            "id": "e603e614-2ec3-4c94-b9d0-117555d2f38a",
+            "id": "fc23141b-e6e3-4316-b4eb-afa6362fac9b",
             "name": "brightness",
             "type": "FLOAT",
             "linkIds": [
@@ -1694,13 +1724,13 @@
             "shape": 7,
             "pos": [
               51,
-              384
+              404
             ]
           }
         ],
         "outputs": [
           {
-            "id": "f8341817-670d-473c-90f7-000382e25ea9",
+            "id": "284524a2-bb93-4572-a60a-de4e34f15817",
             "name": "composed_prompt",
             "type": "STRING",
             "linkIds": [
@@ -1713,7 +1743,7 @@
             ]
           },
           {
-            "id": "40d33d4a-8775-49e5-b42a-6fa92b99e0e6",
+            "id": "77bf6441-1c80-47a2-9ded-39e30679b92e",
             "name": "cache",
             "type": "H3_MOTION_DISK_CACHE",
             "linkIds": [
@@ -1726,13 +1756,13 @@
             ]
           },
           {
-            "id": "41f12dae-37ea-42da-a90a-61810292bb38",
-            "name": "last_frame",
-            "type": "IMAGE",
+            "id": "8c5e8347-ebae-4943-8908-497fc1f4a74e",
+            "name": "cached_samples",
+            "type": "LATENT",
             "linkIds": [
               39
             ],
-            "localized_name": "last_frame",
+            "localized_name": "cached_samples",
             "pos": [
               24,
               64
@@ -1742,7 +1772,7 @@
         "widgets": [],
         "nodes": [
           {
-            "id": 10,
+            "id": 8,
             "type": "Power Lora Loader (rgthree)",
             "pos": [
               1200,
@@ -1753,7 +1783,7 @@
               142
             ],
             "flags": {},
-            "order": 2,
+            "order": 1,
             "mode": 0,
             "inputs": [
               {
@@ -1773,8 +1803,8 @@
                 "shape": 3,
                 "type": "MODEL",
                 "links": [
-                  11,
-                  13
+                  13,
+                  15
                 ]
               },
               {
@@ -1814,11 +1844,11 @@
                 "strengthTwo": null
               },
               "divider#1": {},
-              "\u2795 Add Lora": ""
+              "➕ Add Lora": ""
             }
           },
           {
-            "id": 11,
+            "id": 9,
             "type": "MiniMaxH3KeyframePrompt",
             "pos": [
               1200,
@@ -1829,7 +1859,7 @@
               216
             ],
             "flags": {},
-            "order": 3,
+            "order": 2,
             "mode": 0,
             "inputs": [
               {
@@ -1899,7 +1929,7 @@
             }
           },
           {
-            "id": 12,
+            "id": 11,
             "type": "MiniMaxH3Encode",
             "pos": [
               1600,
@@ -1910,7 +1940,7 @@
               214
             ],
             "flags": {},
-            "order": 4,
+            "order": 3,
             "mode": 0,
             "inputs": [
               {
@@ -1990,7 +2020,7 @@
                 "name": "positive",
                 "type": "CONDITIONING",
                 "links": [
-                  12
+                  11
                 ]
               },
               {
@@ -1998,7 +2028,8 @@
                 "name": "latent",
                 "type": "LATENT",
                 "links": [
-                  18
+                  12,
+                  20
                 ]
               },
               {
@@ -2029,10 +2060,111 @@
             }
           },
           {
+            "id": 12,
+            "type": "MiniMaxH3MotionContextRAM",
+            "pos": [
+              2000,
+              200
+            ],
+            "size": [
+              319.22421875,
+              162
+            ],
+            "flags": {},
+            "order": 4,
+            "mode": 0,
+            "inputs": [
+              {
+                "localized_name": "conditioning",
+                "name": "conditioning",
+                "type": "CONDITIONING",
+                "link": 11
+              },
+              {
+                "localized_name": "latent",
+                "name": "latent",
+                "type": "LATENT",
+                "link": 12
+              },
+              {
+                "localized_name": "context_latent",
+                "name": "context_latent",
+                "shape": 7,
+                "type": "LATENT",
+                "link": 23
+              },
+              {
+                "localized_name": "context_length",
+                "name": "context_length",
+                "type": "COMBO",
+                "widget": {
+                  "name": "context_length"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "audio_context_length",
+                "name": "audio_context_length",
+                "type": "INT",
+                "widget": {
+                  "name": "audio_context_length"
+                },
+                "link": null
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "conditioning",
+                "name": "conditioning",
+                "type": "CONDITIONING",
+                "links": [
+                  14
+                ]
+              },
+              {
+                "localized_name": "trim_frames",
+                "name": "trim_frames",
+                "type": "INT",
+                "links": [
+                  22
+                ]
+              },
+              {
+                "localized_name": "video_context_tokens",
+                "name": "video_context_tokens",
+                "type": "INT",
+                "links": null
+              },
+              {
+                "localized_name": "audio_context_tokens",
+                "name": "audio_context_tokens",
+                "type": "INT",
+                "links": null
+              },
+              {
+                "localized_name": "build",
+                "name": "build",
+                "type": "STRING",
+                "links": null
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "MiniMaxH3MotionContextRAM"
+            },
+            "widgets_values": [
+              "22",
+              0
+            ],
+            "widgets_values_named": {
+              "context_length": "22",
+              "audio_context_length": 0
+            }
+          },
+          {
             "id": 13,
             "type": "BasicGuider",
             "pos": [
-              2000,
+              2400,
               0
             ],
             "size": [
@@ -2047,13 +2179,13 @@
                 "localized_name": "model",
                 "name": "model",
                 "type": "MODEL",
-                "link": 11
+                "link": 13
               },
               {
                 "localized_name": "conditioning",
                 "name": "conditioning",
                 "type": "CONDITIONING",
-                "link": 12
+                "link": 14
               }
             ],
             "outputs": [
@@ -2062,7 +2194,7 @@
                 "name": "GUIDER",
                 "type": "GUIDER",
                 "links": [
-                  15
+                  17
                 ]
               }
             ],
@@ -2074,7 +2206,7 @@
             "id": 14,
             "type": "RandomNoise",
             "pos": [
-              2000,
+              2400,
               150
             ],
             "size": [
@@ -2101,7 +2233,7 @@
                 "name": "NOISE",
                 "type": "NOISE",
                 "links": [
-                  14
+                  16
                 ]
               }
             ],
@@ -2121,7 +2253,7 @@
             "id": 15,
             "type": "KSamplerSelect",
             "pos": [
-              2000,
+              2400,
               300
             ],
             "size": [
@@ -2148,7 +2280,7 @@
                 "name": "SAMPLER",
                 "type": "SAMPLER",
                 "links": [
-                  16
+                  18
                 ]
               }
             ],
@@ -2166,7 +2298,7 @@
             "id": 16,
             "type": "BasicScheduler",
             "pos": [
-              2000,
+              2400,
               420
             ],
             "size": [
@@ -2181,7 +2313,7 @@
                 "localized_name": "model",
                 "name": "model",
                 "type": "MODEL",
-                "link": 13
+                "link": 15
               },
               {
                 "localized_name": "scheduler",
@@ -2217,7 +2349,7 @@
                 "name": "SIGMAS",
                 "type": "SIGMAS",
                 "links": [
-                  17
+                  19
                 ]
               }
             ],
@@ -2239,7 +2371,7 @@
             "id": 17,
             "type": "SamplerCustomAdvanced",
             "pos": [
-              2400,
+              2800,
               100
             ],
             "size": [
@@ -2254,31 +2386,31 @@
                 "localized_name": "noise",
                 "name": "noise",
                 "type": "NOISE",
-                "link": 14
+                "link": 16
               },
               {
                 "localized_name": "guider",
                 "name": "guider",
                 "type": "GUIDER",
-                "link": 15
+                "link": 17
               },
               {
                 "localized_name": "sampler",
                 "name": "sampler",
                 "type": "SAMPLER",
-                "link": 16
+                "link": 18
               },
               {
                 "localized_name": "sigmas",
                 "name": "sigmas",
                 "type": "SIGMAS",
-                "link": 17
+                "link": 19
               },
               {
                 "localized_name": "latent_image",
                 "name": "latent_image",
                 "type": "LATENT",
-                "link": 18
+                "link": 20
               }
             ],
             "outputs": [
@@ -2287,7 +2419,7 @@
                 "name": "output",
                 "type": "LATENT",
                 "links": [
-                  19
+                  21
                 ]
               },
               {
@@ -2302,15 +2434,15 @@
             }
           },
           {
-            "id": 19,
+            "id": 18,
             "type": "MiniMaxH3MotionContextDiskJoin",
             "pos": [
-              2800,
+              3200,
               100
             ],
             "size": [
               348.4615234375,
-              342
+              390
             ],
             "flags": {},
             "order": 9,
@@ -2320,7 +2452,7 @@
                 "localized_name": "samples",
                 "name": "samples",
                 "type": "LATENT",
-                "link": 19
+                "link": 21
               },
               {
                 "localized_name": "previous_cache",
@@ -2334,7 +2466,7 @@
                 "name": "trim_frames",
                 "shape": 7,
                 "type": "INT",
-                "link": null
+                "link": 22
               },
               {
                 "localized_name": "validated",
@@ -2406,6 +2538,7 @@
               {
                 "localized_name": "chain_mode",
                 "name": "chain_mode",
+                "shape": 7,
                 "type": "COMBO",
                 "widget": {
                   "name": "chain_mode"
@@ -2415,6 +2548,7 @@
               {
                 "localized_name": "first_frame_from_previous",
                 "name": "first_frame_from_previous",
+                "shape": 7,
                 "type": "BOOLEAN",
                 "widget": {
                   "name": "first_frame_from_previous"
@@ -2436,7 +2570,7 @@
                 "name": "cached_samples",
                 "type": "LATENT",
                 "links": [
-                  21
+                  39
                 ]
               },
               {
@@ -2487,8 +2621,8 @@
               100,
               100,
               100,
-              "hard_cut",
-              true
+              "motion_context",
+              false
             ],
             "widgets_values_named": {
               "validated": false,
@@ -2497,105 +2631,9 @@
               "clip_name": "",
               "saturation": 100,
               "contrast": 100,
-              "brightness": 100
-            }
-          },
-          {
-            "id": 20,
-            "type": "MiniMaxH3TailFromLatent",
-            "pos": [
-              3200,
-              100
-            ],
-            "size": [
-              287.9908203125,
-              162
-            ],
-            "flags": {},
-            "order": 10,
-            "mode": 0,
-            "inputs": [
-              {
-                "localized_name": "samples",
-                "name": "samples",
-                "type": "LATENT",
-                "link": 21
-              },
-              {
-                "localized_name": "vae",
-                "name": "vae",
-                "type": "VAE",
-                "link": 22
-              },
-              {
-                "localized_name": "audio_vae",
-                "name": "audio_vae",
-                "type": "VAE",
-                "link": 23
-              },
-              {
-                "localized_name": "tail_seconds",
-                "name": "tail_seconds",
-                "type": "FLOAT",
-                "widget": {
-                  "name": "tail_seconds"
-                },
-                "link": null
-              },
-              {
-                "localized_name": "align_to_h3_grid",
-                "name": "align_to_h3_grid",
-                "type": "BOOLEAN",
-                "widget": {
-                  "name": "align_to_h3_grid"
-                },
-                "link": null
-              }
-            ],
-            "outputs": [
-              {
-                "localized_name": "ref_video",
-                "name": "ref_video",
-                "type": "IMAGE",
-                "links": null
-              },
-              {
-                "localized_name": "ref_video_audio",
-                "name": "ref_video_audio",
-                "type": "AUDIO",
-                "links": null
-              },
-              {
-                "localized_name": "last_frame",
-                "name": "last_frame",
-                "type": "IMAGE",
-                "links": [
-                  39
-                ]
-              },
-              {
-                "localized_name": "frame_count",
-                "name": "frame_count",
-                "type": "INT",
-                "links": null
-              },
-              {
-                "localized_name": "duration_seconds",
-                "name": "duration_seconds",
-                "type": "FLOAT",
-                "links": null
-              }
-            ],
-            "properties": {
-              "Node name for S&R": "MiniMaxH3TailFromLatent"
-            },
-            "widgets_values": [
-              0.5,
-              true
-            ],
-            "widgets_values_named": {
-              "tail_seconds": 0.5,
-              "align_to_h3_grid": true
+              "brightness": 100,
+              "chain_mode": "motion_context",
+              "first_frame_from_previous": false
             }
           }
         ],
@@ -2603,22 +2641,38 @@
         "links": [
           {
             "id": 8,
-            "origin_id": 11,
+            "origin_id": 9,
             "origin_slot": 0,
-            "target_id": 12,
+            "target_id": 11,
             "target_slot": 2,
             "type": "H3_PROMPT"
           },
           {
             "id": 11,
-            "origin_id": 10,
+            "origin_id": 11,
+            "origin_slot": 0,
+            "target_id": 12,
+            "target_slot": 0,
+            "type": "CONDITIONING"
+          },
+          {
+            "id": 12,
+            "origin_id": 11,
+            "origin_slot": 1,
+            "target_id": 12,
+            "target_slot": 1,
+            "type": "LATENT"
+          },
+          {
+            "id": 13,
+            "origin_id": 8,
             "origin_slot": 0,
             "target_id": 13,
             "target_slot": 0,
             "type": "MODEL"
           },
           {
-            "id": 12,
+            "id": 14,
             "origin_id": 12,
             "origin_slot": 0,
             "target_id": 13,
@@ -2626,15 +2680,15 @@
             "type": "CONDITIONING"
           },
           {
-            "id": 13,
-            "origin_id": 10,
+            "id": 15,
+            "origin_id": 8,
             "origin_slot": 0,
             "target_id": 16,
             "target_slot": 0,
             "type": "MODEL"
           },
           {
-            "id": 14,
+            "id": 16,
             "origin_id": 14,
             "origin_slot": 0,
             "target_id": 17,
@@ -2642,7 +2696,7 @@
             "type": "NOISE"
           },
           {
-            "id": 15,
+            "id": 17,
             "origin_id": 13,
             "origin_slot": 0,
             "target_id": 17,
@@ -2650,7 +2704,7 @@
             "type": "GUIDER"
           },
           {
-            "id": 16,
+            "id": 18,
             "origin_id": 15,
             "origin_slot": 0,
             "target_id": 17,
@@ -2658,7 +2712,7 @@
             "type": "SAMPLER"
           },
           {
-            "id": 17,
+            "id": 19,
             "origin_id": 16,
             "origin_slot": 0,
             "target_id": 17,
@@ -2666,34 +2720,34 @@
             "type": "SIGMAS"
           },
           {
-            "id": 18,
-            "origin_id": 12,
+            "id": 20,
+            "origin_id": 11,
             "origin_slot": 1,
             "target_id": 17,
             "target_slot": 4,
             "type": "LATENT"
           },
           {
-            "id": 19,
+            "id": 21,
             "origin_id": 17,
             "origin_slot": 0,
-            "target_id": 19,
+            "target_id": 18,
             "target_slot": 0,
             "type": "LATENT"
           },
           {
-            "id": 21,
-            "origin_id": 19,
+            "id": 22,
+            "origin_id": 12,
             "origin_slot": 1,
-            "target_id": 20,
-            "target_slot": 0,
-            "type": "LATENT"
+            "target_id": 18,
+            "target_slot": 2,
+            "type": "INT"
           },
           {
             "id": 2,
             "origin_id": -10,
             "origin_slot": 0,
-            "target_id": 10,
+            "target_id": 8,
             "target_slot": 0,
             "type": "MODEL"
           },
@@ -2701,7 +2755,7 @@
             "id": 3,
             "origin_id": -10,
             "origin_slot": 1,
-            "target_id": 11,
+            "target_id": 9,
             "target_slot": 0,
             "type": "IMAGE"
           },
@@ -2709,7 +2763,7 @@
             "id": 4,
             "origin_id": -10,
             "origin_slot": 2,
-            "target_id": 11,
+            "target_id": 9,
             "target_slot": 1,
             "type": "IMAGE"
           },
@@ -2717,7 +2771,7 @@
             "id": 25,
             "origin_id": -10,
             "origin_slot": 3,
-            "target_id": 11,
+            "target_id": 9,
             "target_slot": 2,
             "type": "STRING"
           },
@@ -2725,7 +2779,7 @@
             "id": 26,
             "origin_id": -10,
             "origin_slot": 4,
-            "target_id": 11,
+            "target_id": 9,
             "target_slot": 3,
             "type": "STRING"
           },
@@ -2733,7 +2787,7 @@
             "id": 27,
             "origin_id": -10,
             "origin_slot": 5,
-            "target_id": 11,
+            "target_id": 9,
             "target_slot": 4,
             "type": "STRING"
           },
@@ -2741,7 +2795,7 @@
             "id": 5,
             "origin_id": -10,
             "origin_slot": 6,
-            "target_id": 12,
+            "target_id": 11,
             "target_slot": 0,
             "type": "CLIP"
           },
@@ -2749,15 +2803,7 @@
             "id": 6,
             "origin_id": -10,
             "origin_slot": 7,
-            "target_id": 12,
-            "target_slot": 1,
-            "type": "VAE"
-          },
-          {
-            "id": 22,
-            "origin_id": -10,
-            "origin_slot": 7,
-            "target_id": 20,
+            "target_id": 11,
             "target_slot": 1,
             "type": "VAE"
           },
@@ -2765,23 +2811,15 @@
             "id": 7,
             "origin_id": -10,
             "origin_slot": 8,
-            "target_id": 12,
+            "target_id": 11,
             "target_slot": 3,
-            "type": "VAE"
-          },
-          {
-            "id": 23,
-            "origin_id": -10,
-            "origin_slot": 8,
-            "target_id": 20,
-            "target_slot": 2,
             "type": "VAE"
           },
           {
             "id": 9,
             "origin_id": -10,
             "origin_slot": 9,
-            "target_id": 12,
+            "target_id": 11,
             "target_slot": 4,
             "type": "INT"
           },
@@ -2789,7 +2827,7 @@
             "id": 10,
             "origin_id": -10,
             "origin_slot": 10,
-            "target_id": 12,
+            "target_id": 11,
             "target_slot": 5,
             "type": "INT"
           },
@@ -2797,14 +2835,22 @@
             "id": 28,
             "origin_id": -10,
             "origin_slot": 11,
-            "target_id": 12,
+            "target_id": 11,
             "target_slot": 7,
             "type": "INT"
           },
           {
-            "id": 29,
+            "id": 23,
             "origin_id": -10,
             "origin_slot": 12,
+            "target_id": 12,
+            "target_slot": 2,
+            "type": "LATENT"
+          },
+          {
+            "id": 29,
+            "origin_id": -10,
+            "origin_slot": 13,
             "target_id": 14,
             "target_slot": 0,
             "type": "INT"
@@ -2812,54 +2858,54 @@
           {
             "id": 24,
             "origin_id": -10,
-            "origin_slot": 13,
-            "target_id": 19,
+            "origin_slot": 14,
+            "target_id": 18,
             "target_slot": 1,
             "type": "H3_MOTION_DISK_CACHE"
           },
           {
             "id": 30,
             "origin_id": -10,
-            "origin_slot": 14,
-            "target_id": 19,
+            "origin_slot": 15,
+            "target_id": 18,
             "target_slot": 3,
             "type": "BOOLEAN"
           },
           {
             "id": 31,
             "origin_id": -10,
-            "origin_slot": 15,
-            "target_id": 19,
+            "origin_slot": 16,
+            "target_id": 18,
             "target_slot": 6,
             "type": "STRING"
           },
           {
             "id": 32,
             "origin_id": -10,
-            "origin_slot": 16,
-            "target_id": 19,
+            "origin_slot": 17,
+            "target_id": 18,
             "target_slot": 7,
             "type": "FLOAT"
           },
           {
             "id": 33,
             "origin_id": -10,
-            "origin_slot": 17,
-            "target_id": 19,
+            "origin_slot": 18,
+            "target_id": 18,
             "target_slot": 8,
             "type": "FLOAT"
           },
           {
             "id": 34,
             "origin_id": -10,
-            "origin_slot": 18,
-            "target_id": 19,
+            "origin_slot": 19,
+            "target_id": 18,
             "target_slot": 9,
             "type": "FLOAT"
           },
           {
             "id": 35,
-            "origin_id": 12,
+            "origin_id": 11,
             "origin_slot": 2,
             "target_id": -20,
             "target_slot": 0,
@@ -2867,7 +2913,7 @@
           },
           {
             "id": 36,
-            "origin_id": 19,
+            "origin_id": 18,
             "origin_slot": 0,
             "target_id": -20,
             "target_slot": 1,
@@ -2875,11 +2921,11 @@
           },
           {
             "id": 39,
-            "origin_id": 20,
-            "origin_slot": 2,
+            "origin_id": 18,
+            "origin_slot": 1,
             "target_id": -20,
             "target_slot": 2,
-            "type": "IMAGE"
+            "type": "LATENT"
           }
         ],
         "extra": {}
@@ -2889,10 +2935,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.9,
+      "scale": 0.5110462953406466,
       "offset": [
-        416,
-        110
+        479.6247721354166,
+        820.6557373046874
       ]
     }
   },
