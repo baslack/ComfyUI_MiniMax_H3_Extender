@@ -59,6 +59,11 @@ def _native_guide_api_supported():
 
 
 def _ensure_patches():
+    # Native builds anchor guides at any frame and order keyframe/ref
+    # conditioning themselves, so ComfyUI stays unpatched.
+    if _native_guide_api_supported():
+        return "native"
+
     # Do not trust another custom node's compatibility marker here.  Reassert
     # our exact v2.6.0 payload patch immediately before Motion Context runs.
     if not _ensure_payload_patch():
@@ -66,9 +71,6 @@ def _ensure_patches():
             "MiniMax H3 Motion Context RAM: could not enforce the Extender "
             "keyframe/reference payload patch. Check the ComfyUI log."
         )
-
-    if _native_guide_api_supported():
-        return "native"
 
     if not _layout_patch_applied():
         if not _apply_layout_patch():
