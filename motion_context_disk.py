@@ -638,6 +638,35 @@ def _final_frame_count(segments):
     return int(total)
 
 
+def _record_seam_lead(segments, index, desc, seam_shift):
+    """Store a clip's seam; a changed lead shortens the previous clip, so its renders are stale."""
+    lead = max(0, -int(seam_shift))
+    changed = desc.get("seam_lead") != lead
+    if index > 0 and changed:
+        prev = dict(segments[index - 1])
+        prev.pop("decoded_mp4_blob", None)
+        prev["final_video_dirty"] = True
+        segments[index - 1] = prev
+    desc["decoded_seam_shift"] = int(seam_shift)
+    desc["seam_lead"] = lead
+    return changed
+
+
+def _seam_lead(desc):
+    """Frames a continued clip starts before its nominal cut; the previous clip ends that much earlier."""
+    return max(0, int(desc.get("seam_lead", 0) or 0))
+
+
+def _visible_frames(segments, index):
+    desc = segments[index]
+    frames = int(desc["frames"])
+    if index > 0:
+        frames += _seam_lead(desc) - int(desc.get("trim_frames", 0) or 0)
+    if index + 1 < len(segments):
+        frames -= _seam_lead(segments[index + 1])
+    return frames
+
+
 def _segment_end(desc):
     return int(desc["segment_end"])
 
@@ -1307,15 +1336,43 @@ def _decode_pair_video(vae, chain, meta):
 
     prev_frames = int(meta["previous_frames"])
     warmup = int(meta["warmup_frames"])
-    # Cut exactly after the overlap. Starting B earlier replays a frame A already showed.
-    start = prev_frames + warmup
-    end = start + int(meta["continued_frames"])
-    if start < 0 or end > int(decoded.shape[0]):
+    lead = _aligned_seam_lead(decoded, prev_frames, warmup)
+    start = prev_frames + warmup - lead
+    end = prev_frames + warmup + int(meta["continued_frames"])
+    if start < prev_frames or end > int(decoded.shape[0]):
         raise RuntimeError("Disk Final Decode: seam crop lies outside decoded pair.")
 
-    previous_raw = decoded[:prev_frames]
+    previous_raw = decoded[:prev_frames - lead]
     current_raw = decoded[start:end]
-    return decoded, previous_raw, current_raw, 0
+    if lead:
+        # Fade from A's real frames into B's re-created ones over the first frames.
+        for j in range(SEAM_CROSSFADE_FRAMES):
+            current_raw[j].lerp_(decoded[prev_frames - lead + j], 1.0 - (j + 1) / (SEAM_CROSSFADE_FRAMES + 1))
+    return decoded, previous_raw, current_raw, -lead
+
+
+SEAM_CROSSFADE_FRAMES = 6
+SEAM_SKIP_FRAMES = 4
+
+
+def _aligned_seam_lead(decoded, prev_frames, warmup):
+    """How many frames before the nominal cut B should take over.
+
+    B re-creates A's last ``warmup`` frames: B's version of A frame t is decoded
+    frame t + warmup. That re-creation is not in step everywhere, and is often a
+    frame ahead at the very end, so cutting at the end of the overlap makes the
+    picture jump forward. Centre the crossfade on the overlap frame where B
+    best matches A, skipping B's first frames while it settles in.
+    """
+    first = prev_frames - warmup + SEAM_SKIP_FRAMES
+    if warmup < SEAM_SKIP_FRAMES + SEAM_CROSSFADE_FRAMES or first >= prev_frames:
+        return 0
+    a = decoded[first:prev_frames, ::8, ::8, :3].float()
+    b = decoded[first + warmup:prev_frames + warmup, ::8, ::8, :3].float()
+    errors = (a - b).abs().mean(dim=(1, 2, 3)).tolist()
+    best = first + min(range(len(errors)), key=errors.__getitem__)
+    cut = min(max(best - SEAM_CROSSFADE_FRAMES // 2, prev_frames - warmup), prev_frames - SEAM_CROSSFADE_FRAMES)
+    return prev_frames - cut
 
 
 def _correct_current_segment(previous_raw, current_raw, ease_frames=12):
@@ -1648,9 +1705,10 @@ def _decode_pair_audio(data_path, prev_desc, curr_desc, audio_vae, fps, seam_shi
         "waveform": torch.cat((w[..., :prev_n], w[..., cut_b:]), dim=-1),
         "sample_rate": sr,
     }
-    final_frames = previous_frames + next_frames - trim
+    lead = max(0, -int(seam_shift))
+    final_frames = previous_frames + next_frames - trim + lead
     pair = _audio_exact_frames(pair, final_frames, fps)
-    return pair, previous_frames, next_frames - trim
+    return pair, previous_frames, next_frames - trim + lead
 
 
 def _smooth_segment_entry_level(
@@ -1959,11 +2017,9 @@ def _color_timeline(segments, fps, source_frames=0):
     fps = float(fps or FPS)
     cursor = max(0, int(source_frames or 0))
     out = []
-    for i, desc in enumerate(segments or []):
-        contribution = int(desc.get("frames", 0))
-        if i > 0:
-            contribution -= int(desc.get("trim_frames", 0))
-        contribution = max(0, contribution)
+    segments = list(segments or [])
+    for i, desc in enumerate(segments):
+        contribution = max(0, _visible_frames(segments, i))
         start = float(cursor / fps)
         cursor += contribution
         end = float(cursor / fps)
@@ -2617,7 +2673,7 @@ def _cache_candidate_render(
         desc["decoded_audio"] = audio_meta
 
     if seam_shift is not None:
-        desc["decoded_seam_shift"] = int(seam_shift)
+        _record_seam_lead(segments, idx, desc, seam_shift)
 
     segments[idx] = desc
     updated = dict(manifest)
@@ -3039,9 +3095,7 @@ def _write_preview_pcm_audio(
                 wave = _smooth_segment_entry_level(previous_tail, wave, sample_rate)
                 wave = _declick_segment(previous_tail, wave, sample_rate, 12.0)
 
-            out_frames = int(desc["frames"])
-            if i > 0:
-                out_frames -= int(desc.get("trim_frames", 0))
+            out_frames = _visible_frames(segments, i)
             cumulative_frames += int(out_frames)
             target = int(round(float(cumulative_frames) / float(fps) * int(sample_rate)))
             wave = _fit_audio_segment_to_cumulative(
@@ -3219,7 +3273,7 @@ def _render_one_final_video_segment(
         if visible_offset or visible_frames != source_frames:
             video = video[visible_offset:visible_offset + visible_frames]
         del v
-        return video, 0
+        return _drop_next_lead(video, segments, i), 0
 
     prev = segments[i - 1]
     chain, meta = _build_pair_video(data_path, prev, curr)
@@ -3233,7 +3287,13 @@ def _render_one_final_video_segment(
         progress.advance()
     current_video = _correct_current_segment(previous_raw, current_raw)
     del decoded, previous_raw, current_raw
-    return current_video, int(shift)
+    return _drop_next_lead(current_video, segments, i), int(shift)
+
+
+def _drop_next_lead(video, segments, index):
+    """The next clip takes over before this clip's last frames; drop them."""
+    lead = _seam_lead(segments[index + 1]) if index + 1 < len(segments) else 0
+    return video[:int(video.shape[0]) - lead] if lead else video
 
 
 def _render_one_final_audio_segment(
@@ -3450,9 +3510,7 @@ def _video_editor_batch_payload(
         zip(segment_paths, clip_paths, wav_paths, segments)
     ):
         clip_id = str(desc.get("clip_id") or f"clip_{i + 1}")
-        out_frames = int(desc.get("frames", 0) or 0)
-        if i > 0:
-            out_frames -= int(desc.get("trim_frames", 0) or 0)
+        out_frames = _visible_frames(segments, i)
         order_index = int(rank.get(clip_id, i))
         editor_clips.append({
             "index": int(order_index + 1),
@@ -3946,7 +4004,7 @@ def cache_full_batch_ref2va_segment(
     )
     is_tail = idx == len(segments) - 1
     video_ready = isinstance(desc.get("decoded_mp4_blob"), dict)
-    shift_ready = idx == 0 or "decoded_seam_shift" in desc
+    shift_ready = idx == 0 or "seam_lead" in desc
     cached_audio = _load_cached_decoded_audio(data_path, desc)
     audio_ready = cached_audio is not None
     if cached_audio is not None:
@@ -4013,7 +4071,7 @@ def cache_full_batch_ref2va_segment(
             segments = [dict(x) for x in manifest.get("segments", [])]
             desc = dict(segments[idx])
             video_ready = isinstance(desc.get("decoded_mp4_blob"), dict)
-            shift_ready = idx == 0 or "decoded_seam_shift" in desc
+            shift_ready = idx == 0 or "seam_lead" in desc
 
         # While the decoded RGB tensor is still resident, encode the exact final
         # segment directly. If the neutral preview was already cached, this helper
@@ -4132,6 +4190,9 @@ def _ensure_ref2va_audio_cache(
     with open(audio_path, "ab", buffering=0) as acf:
         for i in range(target):
             desc = dict(full_segments[i])
+            if i > 0 and "seam_lead" not in desc:
+                # Cached before seams had a lead: re-derive this clip's seam and audio.
+                desc.pop("decoded_audio", None)
             cached = _load_cached_decoded_audio(data_path, desc)
             if cached is not None:
                 del cached
@@ -4139,7 +4200,7 @@ def _ensure_ref2va_audio_cache(
 
             if i == 0:
                 seam_shift = 0
-            elif "decoded_seam_shift" in desc:
+            elif "seam_lead" in desc:
                 seam_shift = int(desc.get("decoded_seam_shift", 0) or 0)
             else:
                 # Compatibility for old caches created before per-clip seam
@@ -4153,7 +4214,10 @@ def _ensure_ref2va_audio_cache(
                     data_path, full_segments, i, vae
                 )
                 del video
-                desc["decoded_seam_shift"] = int(seam_shift)
+                if _record_seam_lead(full_segments, i, desc, seam_shift):
+                    # This clip was rendered with its old cut.
+                    desc.pop("decoded_mp4_blob", None)
+                    desc["final_video_dirty"] = True
 
             audio = _render_one_final_audio_segment(
                 data_path,
