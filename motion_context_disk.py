@@ -72,7 +72,7 @@ FULL_BATCH_H264_CACHE_CRF = 17
 FULL_BATCH_H264_CACHE_PRESET = "fast"
 FULL_BATCH_H264_CACHE_PROFILE = "h264_preview_crf17_fast_v2"
 FULL_BATCH_FINAL_PROFILE_VERSION = 1
-FULL_BATCH_FINAL_CACHE_VERSION = 1
+FULL_BATCH_FINAL_CACHE_VERSION = 2
 
 
 def normalize_full_batch_export_profile(profile=None, *, codec="H.264", crf=17, preset="fast"):
