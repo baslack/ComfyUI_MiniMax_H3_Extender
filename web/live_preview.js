@@ -111,6 +111,13 @@ function hideCompatibilityWidget(node, name) {
     node?.graph?.setDirtyCanvas(true, true);
 }
 
+function repairCrossfadeWidget(node, defaultValue) {
+    // Workflows saved before crossfade_frames existed put the preview widget's
+    // empty value in its slot.
+    const widget = getWidget(node, "crossfade_frames");
+    if (widget && typeof widget.value !== "number") widget.value = defaultValue;
+}
+
 function isFalseValue(value) {
     return value === false || value === 0 || value === "false";
 }
@@ -1033,6 +1040,7 @@ app.registerExtension({
         }
 
         if (nodeData.name !== TARGET) return;
+        const crossfadeDefault = nodeData.input?.optional?.crossfade_frames?.[1]?.default;
 
         const oldCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
@@ -1066,6 +1074,7 @@ app.registerExtension({
 
             stripFinalDecodeOutputs(this);
             hideCompatibilityWidget(this, "fps");
+            repairCrossfadeWidget(this, crossfadeDefault);
             const state = makePlayer(this);
             requestAnimationFrame(() => {
                 stripFinalDecodeOutputs(this);
