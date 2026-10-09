@@ -29,12 +29,12 @@ def _frames(colours):
     return torch.stack([torch.zeros(16, 24, 3) + torch.tensor(c) for c in colours])
 
 
-def _decode(d, colours, prev, warm, continued):
+def _decode(d, colours, prev, warm, continued, crossfade):
     frames = _frames(colours)
     meta = {"previous_frames": prev, "warmup_frames": warm, "continued_frames": continued,
             "decode_frames": int(frames.shape[0])}
     source = frames.clone()
-    current, shift = d._decode_pair_video(DecodedVAE(frames), None, meta)
+    current, shift = d._decode_pair_video(DecodedVAE(frames), None, meta, crossfade)
     return source, current, shift
 
 
@@ -46,11 +46,11 @@ CASES = {
 
 
 @pytest.mark.parametrize("case", list(CASES))
-def test_hard_seam_eases_from_the_previous_clips_colour(ext, case):
+def test_plain_cut_eases_from_the_previous_clips_colour(ext, case):
     d = importlib.import_module(f"{ext.pkg.__name__}.motion_context_disk")
     prev, warm = 8, 5
     copy, new = CASES[case]
-    source, current, shift = _decode(d, [A] * prev + [copy] * warm + new, prev, warm, len(new))
+    source, current, shift = _decode(d, [A] * prev + [copy] * warm + new, prev, warm, len(new), 0)
 
     assert shift == 0
     means = current[..., :3].mean(dim=(1, 2))
@@ -67,7 +67,7 @@ def test_crossfade_follows_the_previous_clips_light(ext):
     wobble = [0.03, 0.05, 0.02, 0.06]
     copies = [tuple(x + wobble[t % 4] for x in a[t]) for t in range(prev - warm, prev)]
     new = [(0.45, 0.44, 0.40)] * continued
-    source, current, shift = _decode(d, a + copies + new, prev, warm, continued)
+    source, current, shift = _decode(d, a + copies + new, prev, warm, continued, d.SEAM_CROSSFADE_FRAMES)
 
     lead = -shift
     fade = d.SEAM_CROSSFADE_FRAMES

@@ -654,6 +654,38 @@ def _record_seam_lead(segments, index, desc, seam_shift):
     return changed
 
 
+def _seam_crossfade(desc):
+    return int(desc.get("seam_crossfade_frames", SEAM_CROSSFADE_FRAMES))
+
+
+def _set_seam_crossfade(manifest_path, manifest, frames):
+    """Use ``frames`` crossfade frames at every seam.
+
+    The crossfade length moves the seam, so a changed seam is cut again and
+    both of its clips are rendered again. New clips take the length from the
+    manifest, so previews follow the last Final Decode.
+    """
+    frames = int(frames)
+    segments = [dict(x) for x in manifest.get("segments", [])]
+    changed = manifest.get("seam_crossfade_frames") != frames
+    for i in range(1, len(segments)):
+        if _seam_crossfade(segments[i]) == frames:
+            continue
+        for desc in (segments[i - 1], segments[i]):
+            desc.pop("decoded_mp4_blob", None)
+            desc["final_video_dirty"] = True
+        segments[i].pop("seam_lead", None)
+        segments[i]["seam_crossfade_frames"] = frames
+        changed = True
+    if not changed:
+        return manifest
+    updated = dict(manifest)
+    updated["segments"] = segments
+    updated["seam_crossfade_frames"] = frames
+    _write_json_atomic(manifest_path, updated)
+    return updated
+
+
 def _seam_lead(desc):
     """Frames a continued clip starts before its nominal cut; the previous clip ends that much earlier."""
     return max(0, int(desc.get("seam_lead", 0) or 0))
@@ -873,6 +905,7 @@ def _append_segment(data_path, latent, index, trim_frames, validated, manifest):
         "validated": bool(validated),
         "frames": int(frames),
         "trim_frames": int(trim),
+        "seam_crossfade_frames": int(manifest.get("seam_crossfade_frames", SEAM_CROSSFADE_FRAMES)),
         "video": video_spec,
         "audio": audio_spec,
         "segment_end": segment_end,
@@ -1436,7 +1469,7 @@ def _build_pair_video(data_path, prev_desc, curr_desc):
     return chain, meta
 
 
-def _decode_pair_video(vae, chain, meta):
+def _decode_pair_video(vae, chain, meta, crossfade_frames):
     decoded = vae.decode(chain)
     if decoded.ndim == 5:
         decoded = decoded.reshape(
@@ -1450,18 +1483,18 @@ def _decode_pair_video(vae, chain, meta):
 
     prev_frames = int(meta["previous_frames"])
     warmup = int(meta["warmup_frames"])
-    lead = _aligned_seam_lead(decoded, prev_frames, warmup)
+    fade = max(0, min(int(crossfade_frames), warmup - SEAM_SKIP_FRAMES))
+    lead = _aligned_seam_lead(decoded, prev_frames, warmup, fade) if fade else 0
     start = prev_frames + warmup - lead
     end = prev_frames + warmup + int(meta["continued_frames"])
     if start < prev_frames or end > int(decoded.shape[0]):
         raise RuntimeError("Disk Final Decode: seam crop lies outside decoded pair.")
 
     current_raw = decoded[start:end]
-    _match_seam_colour(decoded, current_raw, prev_frames, warmup, lead)
-    if lead:
-        # Fade from A's real frames into B's re-created ones over the first frames.
-        for j in range(SEAM_CROSSFADE_FRAMES):
-            current_raw[j].lerp_(decoded[prev_frames - lead + j], 1.0 - (j + 1) / (SEAM_CROSSFADE_FRAMES + 1))
+    _match_seam_colour(decoded, current_raw, prev_frames, warmup, lead, fade)
+    # Fade from A's real frames into B's re-created ones over the first frames.
+    for j in range(fade):
+        current_raw[j].lerp_(decoded[prev_frames - lead + j], 1.0 - (j + 1) / (fade + 1))
     return current_raw, -lead
 
 
@@ -1469,23 +1502,21 @@ SEAM_CROSSFADE_FRAMES = 10
 SEAM_SKIP_FRAMES = 4
 
 
-def _aligned_seam_lead(decoded, prev_frames, warmup):
+def _aligned_seam_lead(decoded, prev_frames, warmup, fade):
     """How many frames before the nominal cut B should take over.
 
     B re-creates A's last ``warmup`` frames: B's version of A frame t is decoded
     frame t + warmup. That re-creation is not in step everywhere, and is often a
     frame ahead at the very end, so cutting at the end of the overlap makes the
-    picture jump forward. Centre the crossfade on the overlap frame where B
-    best matches A, skipping B's first frames while it settles in.
+    picture jump forward. Centre the ``fade``-frame crossfade on the overlap
+    frame where B best matches A, skipping B's first frames while it settles in.
     """
     first = prev_frames - warmup + SEAM_SKIP_FRAMES
-    if warmup < SEAM_SKIP_FRAMES + SEAM_CROSSFADE_FRAMES or first >= prev_frames:
-        return 0
     a = decoded[first:prev_frames, ::8, ::8, :3].float()
     b = decoded[first + warmup:prev_frames + warmup, ::8, ::8, :3].float()
     errors = (a - b).abs().mean(dim=(1, 2, 3)).tolist()
     best = first + min(range(len(errors)), key=errors.__getitem__)
-    cut = min(max(best - SEAM_CROSSFADE_FRAMES // 2, prev_frames - warmup), prev_frames - SEAM_CROSSFADE_FRAMES)
+    cut = min(max(best - fade // 2, prev_frames - warmup), prev_frames - fade)
     return prev_frames - cut
 
 
@@ -1499,7 +1530,7 @@ def _seam_colour_offset(decoded, frame, warmup):
     return (a - b).tolist()
 
 
-def _match_seam_colour(decoded, current_raw, prev_frames, warmup, lead):
+def _match_seam_colour(decoded, current_raw, prev_frames, warmup, lead, matched):
     """Keep B on A's brightness and colour through the seam.
 
     B's copy of A's frames sits a little brighter or darker and wobbles from
@@ -1512,7 +1543,6 @@ def _match_seam_colour(decoded, current_raw, prev_frames, warmup, lead):
     if warmup < 1:
         return
     first = prev_frames - lead
-    matched = min(lead, SEAM_CROSSFADE_FRAMES)
     offset = None
     for k in range(matched):
         offset = _seam_colour_offset(decoded, first + k, warmup)
@@ -3402,7 +3432,7 @@ def _render_one_final_video_segment(
 
     prev = segments[i - 1]
     chain, meta = _build_pair_video(data_path, prev, curr)
-    current_video, shift = _decode_pair_video(vae, chain, meta)
+    current_video, shift = _decode_pair_video(vae, chain, meta, _seam_crossfade(curr))
     del chain
     if progress is not None:
         progress.advance()
@@ -5646,6 +5676,9 @@ class MiniMaxH3MotionContextDiskFinalDecode:
                 "auto_save_project": ("BOOLEAN", {"default": False, "tooltip": "Save a portable .ext project beside each completed Full Batch video. All three modes supported. Ignored in Clip-by-Clip and for interrupted batches. Large projects add disk space and saving time."}),
                 "save_individual_clips": ("BOOLEAN", {"default": False, "tooltip": "Full Batch only. Export each final user-visible clip beside the assembled video, with final video treatment and audio. Disabled leaves the existing export path unchanged."}),
             },
+            "optional": {
+                "crossfade_frames": ("INT", {"default": SEAM_CROSSFADE_FRAMES, "min": 0, "max": 32, "step": 1, "tooltip": "Motion-context seams: frames over which each clip blends into the next. 0 cuts at the end of the overlap. Capped by the overlap the context length gives. Changing it re-cuts the seams without sampling again."}),
+            },
             "hidden": {
                 "unique_id": "UNIQUE_ID",
                 "prompt": "PROMPT",
@@ -5677,6 +5710,7 @@ class MiniMaxH3MotionContextDiskFinalDecode:
         extra_pnginfo=None,
         auto_save_project=False,
         save_individual_clips=False,
+        crossfade_frames=SEAM_CROSSFADE_FRAMES,
     ):
         data_path, manifest_path, manifest = _load_manifest(cache)
         # FPS is cache metadata, never a user choice. The compatibility widget
@@ -5730,6 +5764,8 @@ class MiniMaxH3MotionContextDiskFinalDecode:
                 save_individual_clips=bool(effective_save_individual_clips),
                 editor_batch_requested=bool(editor_batch_requested),
             )
+        manifest = _set_seam_crossfade(manifest_path, manifest, crossfade_frames)
+        segments = [dict(x) for x in manifest.get("segments", [])][:len(segments)]
         source_meta = _source_meta(manifest)
         source_frames = _source_frame_count(source_meta)
         color_timeline = _color_timeline(segments, float(fps), source_frames=source_frames)
