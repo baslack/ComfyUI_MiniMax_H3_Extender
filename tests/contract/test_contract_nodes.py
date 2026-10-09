@@ -32,6 +32,11 @@ EXTENDER_OPTIONAL = [
         ("MiniMaxH3PromptPackBridge", ("H3_PROMPT_PACK", "INT")),
         ("MiniMaxH3ReferencePackBridge", ("H3_REF_PACK", "INT")),
         ("MiniMaxH3TailFromLatent", ("IMAGE", "AUDIO", "IMAGE", "INT", "FLOAT")),
+        ("MiniMaxH3Definition", ("H3_DEF",)),
+        ("MiniMaxH3Definitions", ("H3_DEFS",)),
+        ("MiniMaxH3Ref2VAPrompt", ("H3_PROMPT",)),
+        ("MiniMaxH3KeyframePrompt", ("H3_PROMPT",)),
+        ("MiniMaxH3Encode", ("CONDITIONING", "LATENT", "STRING")),
     ],
 )
 def test_node_is_registered_with_stable_outputs(ext, key, returns):
