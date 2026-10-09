@@ -52,7 +52,6 @@ from .motion_context_ram import (
     FPS,
     _audio_exact_frames,
     _audio_t_for_frames,
-    _auto_early_seam_shift,
     _frames_from_video_t,
     _luma_map,
     _luma_stats,
@@ -1310,20 +1309,15 @@ def _decode_pair_video(vae, chain, meta):
 
     prev_frames = int(meta["previous_frames"])
     warmup = int(meta["warmup_frames"])
-    shift = _auto_early_seam_shift(
-        decoded,
-        previous_frames=prev_frames,
-        warmup_frames=warmup,
-        max_early=2,
-    )
-    start = prev_frames + warmup + int(shift)
+    # Cut exactly after the overlap. Starting B earlier replays a frame A already showed.
+    start = prev_frames + warmup
     end = start + int(meta["continued_frames"])
     if start < 0 or end > int(decoded.shape[0]):
         raise RuntimeError("Disk Final Decode: seam crop lies outside decoded pair.")
 
     previous_raw = decoded[:prev_frames]
     current_raw = decoded[start:end]
-    return decoded, previous_raw, current_raw, int(shift)
+    return decoded, previous_raw, current_raw, 0
 
 
 def _correct_current_segment(previous_raw, current_raw, chunk_frames=8):
