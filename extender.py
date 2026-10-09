@@ -50,8 +50,7 @@ from PIL import Image, ImageEnhance, ImageOps
 from server import PromptServer
 
 from .motion_context_ram import MiniMaxH3MotionContextRAM, _streams_from_latent
-from .latent_refine_engine import upscale_for_refine, preserve_first_pass_audio
-from .latent_upscaler import target_dimensions
+from .latent_refine_engine import upscale_for_refine, preserve_first_pass_audio, target_dimensions
 from .prompt_bridge import MAX_PROMPTS, PROMPT_PACK_TYPE, _prompt_pack_signature
 from .reference_bridge import MAX_REFERENCE_SLOTS, REF_PACK_TYPE
 from .motion_context_disk import (
@@ -2606,7 +2605,26 @@ def _sample_h3(
 
 
 
-def _refine_settings_payload(enabled, scale, steps, denoise, external_sigmas=None):
+H3_LATENT_UPSCALER_KIND = "minimax_h3_learned_latent_upscaler"
+H3_LATENT_UPSCALER_API_VERSION = 1
+
+
+def _require_learned_upscaler(learned_upscaler):
+    """Refine upscales with the Upscaler-Plus provider; nothing is fetched or bundled here."""
+    if (
+        getattr(learned_upscaler, "kind", None) != H3_LATENT_UPSCALER_KIND
+        or getattr(learned_upscaler, "api_version", None) != H3_LATENT_UPSCALER_API_VERSION
+    ):
+        raise ValueError(
+            "MiniMax H3 Extender: Latent Refine needs a learned upscaler. Install "
+            "Comfyui_Minimax_h3_latent_Upscaler-Plus (https://github.com/xmarre/Comfyui_Minimax_h3_latent_Upscaler-Plus), "
+            "put a MiniMax H3 latent upscaler checkpoint from "
+            "https://huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler in ComfyUI/models/latent_upscale_models/, "
+            "and connect a 'MiniMax H3 Latent Upscaler Provider (3D)' to the Extender's learned_upscaler input."
+        )
+
+
+def _refine_settings_payload(enabled, scale, steps, denoise, external_sigmas, learned_upscaler):
     enabled = bool(enabled)
     if not enabled:
         return {"enabled": False}
@@ -2623,6 +2641,8 @@ def _refine_settings_payload(enabled, scale, steps, denoise, external_sigmas=Non
         "external_sigmas": bool(external_sigmas is not None),
         "sigma_count": sig_count,
         "sigma_signature": sig_signature,
+        # A different checkpoint or precision produces different refined clips.
+        "upscaler": [str(learned_upscaler.model_name), str(learned_upscaler.precision)],
     }
 
 
@@ -2660,16 +2680,12 @@ def _refine_ref2va_sample(
     prompt, frame_count, clip_ref_items, clip_ref_blocks, clip_picture_slots,
     clip_video_slots, selected_audio_slots, audio_native_offset, seed,
     sampler_name, scheduler, refine_scale, refine_steps, refine_denoise,
-    external_sigmas, motion=None, previous_refined_proxy=None,
+    external_sigmas, learned_upscaler, motion=None, previous_refined_proxy=None,
     context_length="22", audio_context_length=0,
 ):
     """Direct upscale+refine; returns the sole final sample and refine trim."""
     _refine_progress(owner, clip_index, clip_count, f"Latent upscale clip {clip_index + 1}/{clip_count}")
-    up_latent, out_w, out_h, first_audio = upscale_for_refine(
-        sampled,
-        float(refine_scale),
-        progress=lambda msg: _refine_progress(owner, clip_index, clip_count, msg),
-    )
+    up_latent, out_w, out_h, first_audio = upscale_for_refine(sampled, float(refine_scale), learned_upscaler)
     refine_positive, _unused = _make_ref2va_conditioning(
         clip_text_encoder, vae, prompt, out_w, out_h, frame_count,
         clip_ref_items, clip_ref_blocks, clip_picture_slots, clip_video_slots,
@@ -2696,13 +2712,10 @@ def _refine_fl2va_sample(
     *, owner, clip_index, clip_count, sampled, clip_model, clip_text_encoder, vae,
     prompt, frame_count, first_frame, last_frame, guide_frames, seed,
     sampler_name, scheduler, refine_scale, refine_steps, refine_denoise, external_sigmas,
+    learned_upscaler,
 ):
     _refine_progress(owner, clip_index, clip_count, f"Latent upscale clip {clip_index + 1}/{clip_count}")
-    up_latent, out_w, out_h, first_audio = upscale_for_refine(
-        sampled,
-        float(refine_scale),
-        progress=lambda msg: _refine_progress(owner, clip_index, clip_count, msg),
-    )
+    up_latent, out_w, out_h, first_audio = upscale_for_refine(sampled, float(refine_scale), learned_upscaler)
     refine_positive, _ = make_fl2va_conditioning(
         clip_text_encoder, vae, prompt, out_w, out_h, frame_count,
         first_frame=first_frame, last_frame=last_frame, guide_frames=guide_frames,
@@ -5087,6 +5100,14 @@ class MiniMaxH3Extender:
                     "tooltip": "Optional existing source video to continue as locked Clip 0. Use a native file-backed Load Video output; choose the working resize on the Clip 0 card.",
                 },
             ),
+            # Appended after every pre-existing optional input so saved
+            # target_slot indexes remain unchanged.
+            "learned_upscaler": (
+                "H3_LATENT_UPSCALER",
+                {
+                    "tooltip": "Required for Latent Refine: connect a 'MiniMax H3 Latent Upscaler Provider (3D)' from Comfyui_Minimax_h3_latent_Upscaler-Plus.",
+                },
+            ),
         }
 
         return {
@@ -5166,6 +5187,7 @@ class MiniMaxH3Extender:
         refine_scale=1.5,
         refine_steps=4,
         refine_denoise=0.30,
+        learned_upscaler=None,
     ):
         if fl2va_model is None:
             raise ValueError(
@@ -5226,7 +5248,7 @@ class MiniMaxH3Extender:
             if refine_enabled else (resolved_width, resolved_height)
         )
         refine_payload = _refine_settings_payload(
-            refine_enabled, refine_scale, refine_steps, refine_denoise, sigmas
+            refine_enabled, refine_scale, refine_steps, refine_denoise, sigmas, learned_upscaler
         )
         if manifest.get("segments"):
             geometry_changed = bool(
@@ -5545,7 +5567,7 @@ class MiniMaxH3Extender:
                     first_frame=first_frame, last_frame=last_frame, guide_frames=guide_frames,
                     seed=cfg["seed"], sampler_name=str(sampler_name), scheduler=str(scheduler),
                     refine_scale=refine_scale, refine_steps=refine_steps, refine_denoise=refine_denoise,
-                    external_sigmas=sigmas,
+                    external_sigmas=sigmas, learned_upscaler=learned_upscaler,
                 )
                 del first_pass
             (
@@ -5815,6 +5837,9 @@ class MiniMaxH3Extender:
         refine_denoise = max(0.01, min(1.0, float(refine_denoise)))
         external_sigmas = kwargs.get("sigmas")
         sample_sigmas = _resolve_sample_sigmas(external_sigmas, denoise)
+        learned_upscaler = kwargs.get("learned_upscaler")
+        if refine_enabled:
+            _require_learned_upscaler(learned_upscaler)
         continue_video_input = kwargs.get("continue_existing_video")
         continue_existing_video = (
             _continue_video_from_native_input(continue_video_input)
@@ -5872,6 +5897,7 @@ class MiniMaxH3Extender:
                 sigmas=external_sigmas,
                 refine_enabled=refine_enabled, refine_scale=refine_scale,
                 refine_steps=refine_steps, refine_denoise=refine_denoise,
+                learned_upscaler=learned_upscaler,
             )
 
         if not motion_context:
@@ -5894,6 +5920,7 @@ class MiniMaxH3Extender:
                 sigmas=external_sigmas,
                 refine_enabled=refine_enabled, refine_scale=refine_scale,
                 refine_steps=refine_steps, refine_denoise=refine_denoise,
+                learned_upscaler=learned_upscaler,
             )
 
         data_path, manifest_path, manifest = _manifest_for_extender(owner, FPS)
@@ -6046,7 +6073,7 @@ class MiniMaxH3Extender:
             if refine_enabled else (resolved_width, resolved_height)
         )
         refine_payload = _refine_settings_payload(
-            refine_enabled, refine_scale, refine_steps, refine_denoise, external_sigmas
+            refine_enabled, refine_scale, refine_steps, refine_denoise, external_sigmas, learned_upscaler
         )
         refine_mode_changed = bool(
             cache_has_segments and _refine_settings_changed(manifest, refine_payload)
@@ -6532,7 +6559,7 @@ class MiniMaxH3Extender:
                     selected_audio_slots=selected_audio_slots, audio_native_offset=audio_native_offset,
                     seed=cfg["seed"], sampler_name=str(sampler_name), scheduler=str(scheduler),
                     refine_scale=refine_scale, refine_steps=refine_steps, refine_denoise=refine_denoise,
-                    external_sigmas=external_sigmas, motion=motion,
+                    external_sigmas=external_sigmas, learned_upscaler=learned_upscaler, motion=motion,
                     previous_refined_proxy=(previous_proxy if i > 0 else None),
                     context_length=context_length, audio_context_length=audio_context_length,
                 )

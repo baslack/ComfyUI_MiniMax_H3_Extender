@@ -28,7 +28,13 @@ Refine settings include:
 - **Refine Denoise**
 - automatic display of the resulting final video resolution
 
-The same H3 model is reused for both passes, and the required latent upscaler model is downloaded automatically on first use.
+The same H3 model is reused for both passes. The latent upscale is done by a separate node pack, and nothing is downloaded for you:
+
+1. Install [Comfyui_Minimax_h3_latent_Upscaler-Plus](https://github.com/xmarre/Comfyui_Minimax_h3_latent_Upscaler-Plus).
+2. Get a MiniMax H3 latent upscaler checkpoint from [huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler](https://huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler) and put it in `ComfyUI/models/latent_upscale_models/` (subfolders are fine).
+3. Connect a **MiniMax H3 Latent Upscaler Provider (3D)** to the Extender's `learned_upscaler` input.
+
+Refine raises an error explaining this if no provider is connected.
 
 ---
 
