@@ -737,11 +737,12 @@ function normalizeDynamicReferenceInputOrder(node, linkSnapshot = null) {
     //   ref_video_3 / fps_3 / video_audio_3
     //   ref_pack / prompt_pack
     //   sigmas
-    //   continue_existing_video (v2.9.0 append-only socket; always last)
+    //   continue_existing_video (v2.9.0 append-only socket)
+    //   learned_upscaler (append-only socket; always last)
     if (!node?.inputs?.length) return false;
 
     const packOrder = ["ref_pack", "prompt_pack"];
-    const trailingOrder = ["sigmas", "continue_existing_video"];
+    const trailingOrder = ["sigmas", "continue_existing_video", "learned_upscaler"];
     const dynamicNames = new Set([...packOrder, ...trailingOrder]);
     for (let i = 1; i <= MAX_STANDALONE_AUDIO_REFS; i++) {
         dynamicNames.add(`ref_audio_${i}`);

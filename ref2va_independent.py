@@ -618,6 +618,7 @@ def run(
     refine_scale=1.5,
     refine_steps=8,
     refine_denoise=0.30,
+    learned_upscaler=None,
 ):
     """Execute Ref2VA with no Motion Context and random-access clip caches."""
     from . import extender as e
@@ -678,7 +679,7 @@ def run(
         if refine_enabled else (resolved_width, resolved_height)
     )
     refine_payload = e._refine_settings_payload(
-        refine_enabled, refine_scale, refine_steps, refine_denoise, sigmas
+        refine_enabled, refine_scale, refine_steps, refine_denoise, sigmas, learned_upscaler
     )
     if manifest.get("segments"):
         geometry_changed = bool(
@@ -1051,7 +1052,7 @@ def run(
                 selected_audio_slots=selected_audio_slots, audio_native_offset=audio_native_offset,
                 seed=cfg["seed"], sampler_name=str(sampler_name), scheduler=str(scheduler),
                 refine_scale=refine_scale, refine_steps=refine_steps, refine_denoise=refine_denoise,
-                external_sigmas=sigmas, motion=None, previous_refined_proxy=None,
+                external_sigmas=sigmas, learned_upscaler=learned_upscaler, motion=None, previous_refined_proxy=None,
             )
             del first_pass
 
