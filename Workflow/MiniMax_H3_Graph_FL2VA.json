@@ -284,7 +284,8 @@
       "widgets_values_named": {
         "shift_video": 12,
         "shift_audio": 3
-      }
+      },
+      "title": "Sigma shifts (video / audio)"
     },
     {
       "id": 6,
@@ -1353,7 +1354,7 @@
       "title": "How this works",
       "properties": {},
       "widgets_values": [
-        "### MiniMax H3 graph nodes: FL2VA\n- Each clip runs from a **first frame** to a **last frame**. Clip 2 starts from clip 1's last decoded frame (`last_frame` output).\n- Describe the path between the frames, not the frames themselves. *MiniMax H3 Encode* writes the guide's alignment line from the clip length; the **Composed prompt** preview shows it.\n- FL2VA clips don't overlap, so `trim_frames` is fixed at 0 inside the clip.\n- **Add a clip:** copy a clip node, connect the previous clip's `last_frame` and `cache`, give it a last frame, and move Final Decode to the last clip.\n- Replace the **Load Image** placeholders with your own frames."
+        "### MiniMax H3 graph nodes: FL2VA\n- Each clip runs from a **first frame** to a **last frame**. Clip 2 starts from clip 1's last decoded frame (`last_frame` output).\n- Describe the path between the frames, not the frames themselves. *MiniMax H3 Encode* writes the guide's alignment line from the clip length; the **Composed prompt** preview shows it.\n- The clip's Disk Join uses `chain_mode` = hard_cut: clips are joined by cuts, not overlaps.\n- `first_frame_from_previous` is on inside the clip, so a clip that starts from the previous clip's last frame hides that repeated frame (ignored for clip 1). Turn it off for a clip that starts from a fresh image.\n- **Add a clip:** copy a clip node, connect the previous clip's `last_frame` and `cache`, give it a last frame, and move Final Decode to the last clip.\n- Replace the **Load Image** placeholders with your own frames."
       ],
       "widgets_values_named": {
         "text": "### MiniMax H3 graph nodes: FL2VA\n- Each clip runs from a **first frame** to a **last frame**. Clip 2 starts from clip 1's last decoded frame (`last_frame` output).\n- Describe the path between the frames, not the frames themselves. *MiniMax H3 Encode* writes the guide's alignment line from the clip length; the **Composed prompt** preview shows it.\n- FL2VA clips don't overlap, so `trim_frames` is fixed at 0 inside the clip.\n- **Add a clip:** copy a clip node, connect the previous clip's `last_frame` and `cache`, give it a last frame, and move Final Decode to the last clip.\n- Replace the **Load Image** placeholders with your own frames."
@@ -1955,7 +1956,7 @@
                 "strengthTwo": null
               },
               "divider#1": {},
-              "➕ Add Lora": ""
+              "\u2795 Add Lora": ""
             }
           },
           {
@@ -2443,54 +2444,6 @@
             }
           },
           {
-            "id": 18,
-            "type": "PrimitiveInt",
-            "pos": [
-              2400,
-              400
-            ],
-            "size": [
-              270,
-              82
-            ],
-            "flags": {},
-            "order": 1,
-            "mode": 0,
-            "inputs": [
-              {
-                "localized_name": "value",
-                "name": "value",
-                "type": "INT",
-                "widget": {
-                  "name": "value"
-                },
-                "link": null
-              }
-            ],
-            "outputs": [
-              {
-                "localized_name": "INT",
-                "name": "INT",
-                "type": "INT",
-                "links": [
-                  20
-                ]
-              }
-            ],
-            "title": "trim_frames (FL2VA: no overlap)",
-            "properties": {
-              "Node name for S&R": "PrimitiveInt"
-            },
-            "widgets_values": [
-              0,
-              "fixed"
-            ],
-            "widgets_values_named": {
-              "value": 0,
-              "fixed": "fixed"
-            }
-          },
-          {
             "id": 19,
             "type": "MiniMaxH3MotionContextDiskJoin",
             "pos": [
@@ -2523,7 +2476,7 @@
                 "name": "trim_frames",
                 "shape": 7,
                 "type": "INT",
-                "link": 20
+                "link": null
               },
               {
                 "localized_name": "validated",
@@ -2591,6 +2544,24 @@
                   "name": "brightness"
                 },
                 "link": 34
+              },
+              {
+                "localized_name": "chain_mode",
+                "name": "chain_mode",
+                "type": "COMBO",
+                "widget": {
+                  "name": "chain_mode"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "first_frame_from_previous",
+                "name": "first_frame_from_previous",
+                "type": "BOOLEAN",
+                "widget": {
+                  "name": "first_frame_from_previous"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -2657,7 +2628,9 @@
               "",
               100,
               100,
-              100
+              100,
+              "hard_cut",
+              true
             ],
             "widgets_values_named": {
               "validated": false,
@@ -2849,14 +2822,6 @@
             "target_id": 19,
             "target_slot": 0,
             "type": "LATENT"
-          },
-          {
-            "id": 20,
-            "origin_id": 18,
-            "origin_slot": 0,
-            "target_id": 19,
-            "target_slot": 2,
-            "type": "INT"
           },
           {
             "id": 21,
