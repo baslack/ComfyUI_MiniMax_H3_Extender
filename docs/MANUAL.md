@@ -159,12 +159,19 @@ filled in for you; pick `task_types` to set the tags yourself.
 - **Disk Join settings:** `clip_name` names the clip's file in individual clip
   exports. `saturation`, `contrast` and `brightness` set its colour in Final
   Decode.
-- **Refine:** refine every clip at the same scale, or none. Feed the next
-  clip's refine pass a second Motion Context RAM with the encoder's
-  `positive`. A refined previous clip is shrunk automatically for the base
-  pass.
-- **FL2VA clips:** these have no motion context. Wire `trim_frames` to 0 (for
-  example from a `PrimitiveInt`); unconnected, Disk Join assumes 22.
+- **Refine:** refine every clip at the same scale, or none. The sample's
+  refine pass works like the Extender's:
+  1. Split the AV latent and upscale the video only.
+  2. Recombine it for a second Motion Context RAM (with the encoder's
+     `positive`) and sampler.
+  3. Put the first-pass audio back on the refined video.
+
+  A refined previous clip is shrunk automatically for the base pass.
+- **FL2VA clips:** these have no motion context. Set `chain_mode` to
+  `hard_cut` on the first Disk Join, so Final Decode joins the clips with cuts.
+  When a clip starts from the previous clip's last frame (via **MiniMax H3
+  Tail From Latent**), turn on its Join's `first_frame_from_previous`, so that
+  frame isn't shown twice.
 
 Continuing an existing video is not available with the graph nodes yet.
 

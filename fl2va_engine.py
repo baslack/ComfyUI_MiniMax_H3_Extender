@@ -1594,6 +1594,7 @@ def export_fl2va_final(
     require_continuity=True,
     project_autosave_settings=None,
     save_individual_clips=False,
+    editor_batch_requested=False,
 ):
     """Decode FL2VA plans as independent hard cuts.
 
@@ -1782,7 +1783,7 @@ def export_fl2va_final(
                     "color_preview_baked": False,
                 }],
             },
-            "result": (d._video_output_from_path(autosave_path),),
+            "result": (d._video_output_from_path(autosave_path), None),
         }
 
     # ------------------------------------------------------------------
@@ -1949,6 +1950,7 @@ def export_fl2va_final(
         audio_bitrate=audio_bitrate,
         token=token,
         save_individual_clips=bool(save_individual_clips),
+        editor_batch_requested=bool(editor_batch_requested),
         workflow=workflow,
         prompt=prompt,
         progress=progress,
@@ -1985,5 +1987,8 @@ def export_fl2va_final(
                 "color_preview_baked": False,
             }],
         },
-        "result": (d._video_output_from_path(output_path),),
+        "result": (
+            d._video_output_from_path(output_path),
+            individual_export_info.get("video_editor_batch") if bool(editor_batch_requested) else None,
+        ),
     }

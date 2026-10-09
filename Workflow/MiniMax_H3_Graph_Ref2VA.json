@@ -288,7 +288,8 @@
       "widgets_values_named": {
         "shift_video": 12,
         "shift_audio": 3
-      }
+      },
+      "title": "Sigma shifts (video / audio)"
     },
     {
       "id": 6,
@@ -894,7 +895,7 @@
         "Node name for S&R": "PrimitiveFloat"
       },
       "widgets_values": [
-        2
+        1.5
       ],
       "widgets_values_named": {
         "value": 2
@@ -1942,7 +1943,7 @@
       "title": "How this works",
       "properties": {},
       "widgets_values": [
-        "### MiniMax H3 graph nodes: Ref2VA\n- **Definitions** name references once; each clip uses only the ones its text mentions. Refer to them as `<Subject mara>`, `<Picture name>`, `<Video name>`, `<Audio name>`.\n- **Speakers** are named too: `(S mara)`, or `(S mara, S barista)` together. Each clip numbers them in the order they first speak.\n- Write `detailed_description` as a style sentence, then `[Shot 1] ...`, `[Shot 2] At 00:03.000, ...`. The **Composed prompt** preview shows exactly what the model gets.\n- **Add a clip:** copy a clip node, connect the previous clip's `cache` and `cached_samples`, and move Final Decode to the last clip. Clip 1 leaves both unconnected.\n- **Refine:** open a clip and un-bypass *MiniMax H3 Refine* (applies to every clip). Set the scale on *Refine scale (all clips)*.\n- Replace both **Load Image** placeholders with your own images."
+        "### MiniMax H3 graph nodes: Ref2VA\n- **Definitions** name references once; each clip uses only the ones its text mentions. Refer to them as `<Subject mara>`, `<Picture name>`, `<Video name>`, `<Audio name>`.\n- **Speakers** are named too: `(S mara)`, or `(S mara, S barista)` together. Each clip numbers them in the order they first speak.\n- Write `detailed_description` as a style sentence, then `[Shot 1] ...`, `[Shot 2] At 00:03.000, ...`. The **Composed prompt** preview shows exactly what the model gets.\n- **Add a clip:** copy a clip node, connect the previous clip's `cache` and `cached_samples`, and move Final Decode to the last clip. Clip 1 leaves both unconnected.\n- **Refine:** open a clip and un-bypass *MiniMax H3 Refine* (applies to every clip). Set the scale on *Refine scale (all clips)*. The refine pass upscales the video only and keeps the first-pass audio.\n- Replace both **Load Image** placeholders with your own images."
       ],
       "widgets_values_named": {
         "text": "### MiniMax H3 graph nodes: Ref2VA\n- **Definitions** name references once; each clip uses only the ones its text mentions. Refer to them as `<Subject mara>`, `<Picture name>`, `<Video name>`, `<Audio name>`.\n- **Speakers** are named too: `(S mara)`, or `(S mara, S barista)` together. Each clip numbers them in the order they first speak.\n- Write `detailed_description` as a style sentence, then `[Shot 1] ...`, `[Shot 2] At 00:03.000, ...`. The **Composed prompt** preview shows exactly what the model gets.\n- **Add a clip:** copy a clip node, connect the previous clip's `cache` and `cached_samples`, and move Final Decode to the last clip. Clip 1 leaves both unconnected.\n- **Refine:** open a clip and un-bypass *MiniMax H3 Refine* (applies to every clip). Set the scale on *Refine scale (all clips)*.\n- Replace both **Load Image** placeholders with your own images."
@@ -3922,8 +3923,8 @@
         "version": 1,
         "state": {
           "lastGroupId": 0,
-          "lastNodeId": 49,
-          "lastLinkId": 111,
+          "lastNodeId": 53,
+          "lastLinkId": 135,
           "lastRerouteId": 0
         },
         "revision": 0,
@@ -3953,7 +3954,7 @@
             "name": "latent",
             "type": "LATENT",
             "linkIds": [
-              24
+              126
             ],
             "localized_name": "latent",
             "label": "samples",
@@ -3967,7 +3968,7 @@
             "name": "mode.scale",
             "type": "FLOAT",
             "linkIds": [
-              40
+              113
             ],
             "localized_name": "scale",
             "label": "scale",
@@ -3981,7 +3982,7 @@
             "name": "conditioning",
             "type": "CONDITIONING",
             "linkIds": [
-              25
+              114
             ],
             "localized_name": "conditioning",
             "pos": [
@@ -3994,7 +3995,7 @@
             "name": "context_latent",
             "type": "LATENT",
             "linkIds": [
-              38
+              115
             ],
             "localized_name": "context_latent",
             "label": "previous_samples",
@@ -4009,8 +4010,8 @@
             "name": "model",
             "type": "MODEL",
             "linkIds": [
-              27,
-              29
+              116,
+              117
             ],
             "localized_name": "model",
             "pos": [
@@ -4023,7 +4024,7 @@
             "name": "noise",
             "type": "NOISE",
             "linkIds": [
-              30
+              118
             ],
             "localized_name": "noise",
             "pos": [
@@ -4036,7 +4037,7 @@
             "name": "sampler",
             "type": "SAMPLER",
             "linkIds": [
-              32
+              119
             ],
             "localized_name": "sampler",
             "pos": [
@@ -4051,7 +4052,7 @@
             "name": "output",
             "type": "LATENT",
             "linkIds": [
-              35
+              135
             ],
             "localized_name": "output",
             "label": "samples",
@@ -4082,7 +4083,7 @@
                 "localized_name": "latent",
                 "name": "latent",
                 "type": "*",
-                "link": null
+                "link": 127
               },
               {
                 "localized_name": "learned_upscaler",
@@ -4116,7 +4117,7 @@
                 "widget": {
                   "name": "mode.scale"
                 },
-                "link": null
+                "link": 113
               },
               {
                 "localized_name": "align",
@@ -4169,7 +4170,9 @@
                 "localized_name": "latent",
                 "name": "latent",
                 "type": "*",
-                "links": []
+                "links": [
+                  128
+                ]
               }
             ],
             "properties": {
@@ -4208,27 +4211,27 @@
               162
             ],
             "flags": {},
-            "order": 0,
+            "order": 1,
             "mode": 0,
             "inputs": [
               {
                 "localized_name": "conditioning",
                 "name": "conditioning",
                 "type": "CONDITIONING",
-                "link": null
+                "link": 114
               },
               {
                 "localized_name": "latent",
                 "name": "latent",
                 "type": "LATENT",
-                "link": null
+                "link": 130
               },
               {
                 "localized_name": "context_latent",
                 "name": "context_latent",
                 "shape": 7,
                 "type": "LATENT",
-                "link": null
+                "link": 115
               },
               {
                 "localized_name": "context_length",
@@ -4254,7 +4257,9 @@
                 "localized_name": "conditioning",
                 "name": "conditioning",
                 "type": "CONDITIONING",
-                "links": []
+                "links": [
+                  122
+                ]
               },
               {
                 "localized_name": "trim_frames",
@@ -4305,20 +4310,20 @@
               46
             ],
             "flags": {},
-            "order": 0,
+            "order": 2,
             "mode": 0,
             "inputs": [
               {
                 "localized_name": "model",
                 "name": "model",
                 "type": "MODEL",
-                "link": null
+                "link": 116
               },
               {
                 "localized_name": "conditioning",
                 "name": "conditioning",
                 "type": "CONDITIONING",
-                "link": null
+                "link": 122
               }
             ],
             "outputs": [
@@ -4326,7 +4331,9 @@
                 "localized_name": "GUIDER",
                 "name": "GUIDER",
                 "type": "GUIDER",
-                "links": []
+                "links": [
+                  123
+                ]
               }
             ],
             "properties": {
@@ -4345,14 +4352,14 @@
               106
             ],
             "flags": {},
-            "order": 0,
+            "order": 3,
             "mode": 0,
             "inputs": [
               {
                 "localized_name": "model",
                 "name": "model",
                 "type": "MODEL",
-                "link": null
+                "link": 117
               },
               {
                 "localized_name": "scheduler",
@@ -4387,7 +4394,9 @@
                 "localized_name": "SIGMAS",
                 "name": "SIGMAS",
                 "type": "SIGMAS",
-                "links": []
+                "links": [
+                  124
+                ]
               }
             ],
             "properties": {
@@ -4416,38 +4425,38 @@
               106
             ],
             "flags": {},
-            "order": 0,
+            "order": 4,
             "mode": 0,
             "inputs": [
               {
                 "localized_name": "noise",
                 "name": "noise",
                 "type": "NOISE",
-                "link": null
+                "link": 118
               },
               {
                 "localized_name": "guider",
                 "name": "guider",
                 "type": "GUIDER",
-                "link": null
+                "link": 123
               },
               {
                 "localized_name": "sampler",
                 "name": "sampler",
                 "type": "SAMPLER",
-                "link": null
+                "link": 119
               },
               {
                 "localized_name": "sigmas",
                 "name": "sigmas",
                 "type": "SIGMAS",
-                "link": null
+                "link": 124
               },
               {
                 "localized_name": "latent_image",
                 "name": "latent_image",
                 "type": "LATENT",
-                "link": null
+                "link": 131
               }
             ],
             "outputs": [
@@ -4455,7 +4464,9 @@
                 "localized_name": "output",
                 "name": "output",
                 "type": "LATENT",
-                "links": []
+                "links": [
+                  132
+                ]
               },
               {
                 "localized_name": "denoised_output",
@@ -4467,10 +4478,343 @@
             "properties": {
               "Node name for S&R": "SamplerCustomAdvanced"
             }
+          },
+          {
+            "id": 50,
+            "type": "MinimaxH3SplitAVLatent",
+            "pos": [
+              2500,
+              500
+            ],
+            "size": [
+              219.0630859375,
+              46
+            ],
+            "flags": {},
+            "order": 5,
+            "mode": 0,
+            "inputs": [
+              {
+                "localized_name": "latent",
+                "name": "latent",
+                "type": "LATENT",
+                "link": 126
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "video_latent",
+                "name": "video_latent",
+                "type": "LATENT",
+                "links": [
+                  127
+                ]
+              },
+              {
+                "localized_name": "audio_latent",
+                "name": "audio_latent",
+                "type": "LATENT",
+                "links": [
+                  129,
+                  134
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "MinimaxH3SplitAVLatent"
+            }
+          },
+          {
+            "id": 51,
+            "type": "MinimaxH3CombineAVLatent",
+            "pos": [
+              3150,
+              750
+            ],
+            "size": [
+              249.4283203125,
+              46
+            ],
+            "flags": {},
+            "order": 6,
+            "mode": 0,
+            "inputs": [
+              {
+                "localized_name": "video_latent",
+                "name": "video_latent",
+                "type": "LATENT",
+                "link": 128
+              },
+              {
+                "localized_name": "audio_latent",
+                "name": "audio_latent",
+                "type": "LATENT",
+                "link": 129
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "latent",
+                "name": "latent",
+                "type": "LATENT",
+                "links": [
+                  130,
+                  131
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "MinimaxH3CombineAVLatent"
+            }
+          },
+          {
+            "id": 52,
+            "type": "MinimaxH3SplitAVLatent",
+            "pos": [
+              4350,
+              500
+            ],
+            "size": [
+              219.0630859375,
+              46
+            ],
+            "flags": {},
+            "order": 7,
+            "mode": 0,
+            "inputs": [
+              {
+                "localized_name": "latent",
+                "name": "latent",
+                "type": "LATENT",
+                "link": 132
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "video_latent",
+                "name": "video_latent",
+                "type": "LATENT",
+                "links": [
+                  133
+                ]
+              },
+              {
+                "localized_name": "audio_latent",
+                "name": "audio_latent",
+                "type": "LATENT",
+                "links": null
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "MinimaxH3SplitAVLatent"
+            }
+          },
+          {
+            "id": 53,
+            "type": "MinimaxH3CombineAVLatent",
+            "pos": [
+              4650,
+              500
+            ],
+            "size": [
+              249.4283203125,
+              46
+            ],
+            "flags": {},
+            "order": 8,
+            "mode": 0,
+            "inputs": [
+              {
+                "localized_name": "video_latent",
+                "name": "video_latent",
+                "type": "LATENT",
+                "link": 133
+              },
+              {
+                "localized_name": "audio_latent",
+                "name": "audio_latent",
+                "type": "LATENT",
+                "link": 134
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "latent",
+                "name": "latent",
+                "type": "LATENT",
+                "links": [
+                  135
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "MinimaxH3CombineAVLatent"
+            }
           }
         ],
         "groups": [],
-        "links": [],
+        "links": [
+          {
+            "id": 114,
+            "origin_id": -10,
+            "origin_slot": 2,
+            "target_id": 22,
+            "target_slot": 0,
+            "type": "CONDITIONING"
+          },
+          {
+            "id": 115,
+            "origin_id": -10,
+            "origin_slot": 3,
+            "target_id": 22,
+            "target_slot": 2,
+            "type": "LATENT"
+          },
+          {
+            "id": 116,
+            "origin_id": -10,
+            "origin_slot": 4,
+            "target_id": 23,
+            "target_slot": 0,
+            "type": "MODEL"
+          },
+          {
+            "id": 117,
+            "origin_id": -10,
+            "origin_slot": 4,
+            "target_id": 24,
+            "target_slot": 0,
+            "type": "MODEL"
+          },
+          {
+            "id": 118,
+            "origin_id": -10,
+            "origin_slot": 5,
+            "target_id": 25,
+            "target_slot": 0,
+            "type": "NOISE"
+          },
+          {
+            "id": 119,
+            "origin_id": -10,
+            "origin_slot": 6,
+            "target_id": 25,
+            "target_slot": 2,
+            "type": "SAMPLER"
+          },
+          {
+            "id": 122,
+            "origin_id": 22,
+            "origin_slot": 0,
+            "target_id": 23,
+            "target_slot": 1,
+            "type": "CONDITIONING"
+          },
+          {
+            "id": 123,
+            "origin_id": 23,
+            "origin_slot": 0,
+            "target_id": 25,
+            "target_slot": 1,
+            "type": "GUIDER"
+          },
+          {
+            "id": 124,
+            "origin_id": 24,
+            "origin_slot": 0,
+            "target_id": 25,
+            "target_slot": 3,
+            "type": "SIGMAS"
+          },
+          {
+            "id": 126,
+            "origin_id": -10,
+            "origin_slot": 0,
+            "target_id": 50,
+            "target_slot": 0,
+            "type": "LATENT"
+          },
+          {
+            "id": 128,
+            "origin_id": 21,
+            "origin_slot": 0,
+            "target_id": 51,
+            "target_slot": 0,
+            "type": "LATENT"
+          },
+          {
+            "id": 129,
+            "origin_id": 50,
+            "origin_slot": 1,
+            "target_id": 51,
+            "target_slot": 1,
+            "type": "LATENT"
+          },
+          {
+            "id": 130,
+            "origin_id": 51,
+            "origin_slot": 0,
+            "target_id": 22,
+            "target_slot": 1,
+            "type": "LATENT"
+          },
+          {
+            "id": 131,
+            "origin_id": 51,
+            "origin_slot": 0,
+            "target_id": 25,
+            "target_slot": 4,
+            "type": "LATENT"
+          },
+          {
+            "id": 132,
+            "origin_id": 25,
+            "origin_slot": 0,
+            "target_id": 52,
+            "target_slot": 0,
+            "type": "LATENT"
+          },
+          {
+            "id": 133,
+            "origin_id": 52,
+            "origin_slot": 0,
+            "target_id": 53,
+            "target_slot": 0,
+            "type": "LATENT"
+          },
+          {
+            "id": 134,
+            "origin_id": 50,
+            "origin_slot": 1,
+            "target_id": 53,
+            "target_slot": 1,
+            "type": "LATENT"
+          },
+          {
+            "id": 135,
+            "origin_id": 53,
+            "origin_slot": 0,
+            "target_id": -20,
+            "target_slot": 0,
+            "type": "LATENT"
+          },
+          {
+            "id": 127,
+            "origin_id": 50,
+            "origin_slot": 0,
+            "target_id": 21,
+            "target_slot": 0,
+            "type": "LATENT"
+          },
+          {
+            "id": 113,
+            "origin_id": -10,
+            "origin_slot": 1,
+            "target_id": 21,
+            "target_slot": 4,
+            "type": "FLOAT"
+          }
+        ],
         "extra": {}
       }
     ]
