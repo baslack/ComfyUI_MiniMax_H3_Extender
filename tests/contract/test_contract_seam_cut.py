@@ -46,13 +46,12 @@ def test_next_clip_takes_over_around_the_best_aligned_overlap_frame(ext):
     source = frames.clone()
 
     with torch.inference_mode():
-        _, previous_raw, current_raw, shift = d._decode_pair_video(DecodedVAE(frames), None, meta)
+        current_raw, shift = d._decode_pair_video(DecodedVAE(frames), None, meta)
 
     fade = d.SEAM_CROSSFADE_FRAMES
     cut = PREV - 6 - fade // 2
     lead = PREV - cut
     assert shift == -lead
-    assert previous_raw.shape[0] == PREV - lead
     assert current_raw.shape[0] == CONTINUED + lead
     for j in range(fade):
         a_weight = 1.0 - (j + 1) / (fade + 1)
