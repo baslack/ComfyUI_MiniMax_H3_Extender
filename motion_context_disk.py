@@ -54,8 +54,6 @@ from .motion_context_ram import (
     _audio_t_for_frames,
     _auto_early_seam_shift,
     _frames_from_video_t,
-    _luma_map,
-    _luma_stats,
     _pixel_frames,
     _steps_for_frames,
     _streams_from_latent,
@@ -1326,130 +1324,30 @@ def _decode_pair_video(vae, chain, meta):
     return decoded, previous_raw, current_raw, int(shift)
 
 
-def _correct_current_segment(previous_raw, current_raw, chunk_frames=8):
-    """Memory-bounded disk Final Decode seam correction.
+def _correct_current_segment(previous_raw, current_raw, ease_frames=12):
+    """Ease the next clip's colour in from the previous clip's last frame.
 
-    This is mathematically equivalent to the disk path's former full-buffer
-    photometric correction, but deliberately avoids allocating a second full
-    RGB clip.
-
-    ``current_raw`` is a disposable view into the decoded seam-pair buffer, so
-    the correction is applied in place.  Large per-frame operations are then
-    evaluated in small chunks to keep temporary float32 tensors bounded.  The
-    RAM/legacy Join still uses its original helper unchanged.
+    The next clip's first decoded frames can flash, or sit on a different
+    brightness or colour than the previous clip's tail. Each of the first
+    ``ease_frames`` frames is nudged, per RGB channel, onto a straight path from
+    the previous clip's last frame to the next clip's own colour at
+    ``ease_frames``; later frames keep their own look. ``current_raw`` is a
+    disposable view into the decoded seam-pair buffer, so this works in place.
     """
-    tail_n = min(4, int(previous_raw.shape[0]))
     current_n = int(current_raw.shape[0])
-    if tail_n < 1 or current_n < 1:
+    if int(previous_raw.shape[0]) < 1 or current_n < 2:
         return current_raw
 
-    ref = previous_raw[-min(4, tail_n):]
-    src = current_raw[:min(4, current_n)]
-
-    ref_mean, ref_std, ref_med = _luma_stats(ref)
-    src_mean, src_std, src_med = _luma_stats(src)
-
-    if abs(ref_mean - src_mean) < 0.008 and abs(ref_med - src_med) < 0.012:
-        return current_raw
-
-    eps = 1e-4
-    src_med_c = min(max(src_med, 0.05), 0.95)
-    ref_med_c = min(max(ref_med, 0.05), 0.95)
-
-    gamma_full = math.log(ref_med_c) / math.log(src_med_c)
-    gamma_full = float(max(0.88, min(1.15, gamma_full)))
-
-    src_y = _luma_map(src).detach().float()
-    src_y_gamma = src_y.clamp(eps, 1.0).pow(gamma_full)
-    gamma_mean = float(src_y_gamma.mean().item())
-    if gamma_mean <= eps:
-        del src_y, src_y_gamma
-        return current_raw
-
-    gain_full = ref_mean / gamma_mean
-    gain_full = float(max(0.88, min(1.12, gain_full)))
-
-    corrected_std = float(
-        (src_y_gamma * gain_full).std(unbiased=False).clamp_min(1e-5).item()
-    )
-    contrast_full = ref_std / corrected_std if corrected_std > eps else 1.0
-    contrast_full = float(max(0.92, min(1.08, contrast_full)))
-    del src_y, src_y_gamma
-
-    global_strength = 0.55
-    seam_full_mean = gamma_mean * gain_full
-    mean_offset = ref_mean - seam_full_mean
-    step = max(1, int(chunk_frames))
-
-    # Global correction, in place, with bounded temporary tensors.
-    for start in range(0, current_n, step):
-        end = min(current_n, start + step)
-        segment = current_raw[start:end]
-        rgb = segment[..., :3].float()
-        y = _luma_map(rgb)
-        y_full = y.clamp(eps, 1.0).pow(gamma_full)
-        y_full = (y_full - ref_mean) * contrast_full + ref_mean
-        y_full = y_full * gain_full
-        y_full = (y_full + mean_offset).clamp(0.0, 1.0)
-        delta = (y_full - y) * global_strength
-        segment[..., :3] = (
-            rgb + delta.unsqueeze(-1)
-        ).clamp(0.0, 1.0).to(segment.dtype)
-        del segment, rgb, y, y_full, delta
-
-    # Same local first-three-frame stabilization as the legacy helper.
-    local_count = min(3, current_n)
-    if local_count > 0:
-        stable_start = min(current_n, local_count)
-        stable_end = min(current_n, stable_start + 4)
-        if stable_end > stable_start:
-            stable_mean, _, _ = _luma_stats(current_raw[stable_start:stable_end])
-        else:
-            stable_mean = ref_mean
-
-        local_mix = (0.10, 0.40, 0.75)
-        for j in range(local_count):
-            frame = current_raw[j]
-            rgb = frame[..., :3].float()
-            y = _luma_map(rgb)
-            current_mean = float(y.mean().item())
-            t = local_mix[j]
-            target_mean = ref_mean * (1.0 - t) + stable_mean * t
-            offset = max(-0.060, min(0.060, float(target_mean - current_mean)))
-            y_local = (y + offset).clamp(0.0, 1.0)
-            delta = y_local - y
-            frame[..., :3] = (
-                rgb + delta.unsqueeze(-1)
-            ).clamp(0.0, 1.0).to(frame.dtype)
-            del frame, rgb, y, y_local, delta
-
-    # Same +3.5% stable continuation lift, also chunked in place.
-    tail_gain = 1.035
-    tail_start = 3
-    if tail_start < current_n:
-        for start in range(tail_start, current_n, step):
-            end = min(current_n, start + step)
-            tail = current_raw[start:end]
-            rgb = tail[..., :3].float()
-            y = _luma_map(rgb)
-            y_lift = (y * tail_gain).clamp(0.0, 1.0)
-
-            count = int(tail.shape[0])
-            strength = torch.ones(
-                (count, 1, 1), device=y.device, dtype=y.dtype
-            )
-            offset0 = start - tail_start
-            if offset0 == 0 and count >= 1:
-                strength[0] = 1.0 / 3.0
-            if offset0 <= 1 < offset0 + count:
-                strength[1 - offset0] = 2.0 / 3.0
-
-            delta = (y_lift - y) * strength
-            tail[..., :3] = (
-                rgb + delta.unsqueeze(-1)
-            ).clamp(0.0, 1.0).to(tail.dtype)
-            del tail, rgb, y, y_lift, strength, delta
-
+    settle = min(int(ease_frames), current_n - 1)
+    start = previous_raw[-1, ..., :3].float().mean(dim=(0, 1)).tolist()
+    end = current_raw[settle, ..., :3].float().mean(dim=(0, 1)).tolist()
+    for k in range(settle):
+        t = k / settle
+        frame = current_raw[k, ..., :3]
+        mean = frame.float().mean(dim=(0, 1)).tolist()
+        for c in range(3):
+            target = start[c] * (1.0 - t) + end[c] * t
+            frame[..., c].add_(target - mean[c]).clamp_(0.0, 1.0)
     return current_raw
 
 
