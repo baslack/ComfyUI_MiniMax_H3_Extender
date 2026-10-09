@@ -1010,6 +1010,29 @@ def _effective_state(previous_cache, run_mode, fps, unique_id):
     return data_path, manifest_path, manifest, mode, stop, index
 
 
+def _apply_clip_settings(manifest_path, manifest, index, clip_name, saturation, contrast, brightness):
+    """Store the node's clip name and colour on its segment; the Extender passes neither."""
+    if clip_name is None and saturation is None:
+        return manifest
+    segments = [dict(x) for x in manifest.get("segments", [])]
+    desc = segments[index]
+    adjustment = _normalize_color_adjustment(
+        {"saturation": saturation, "contrast": contrast, "brightness": brightness}
+    )
+    name = str(clip_name or "").strip()
+    if desc.get("clip_name", "") == name and desc.get("color_adjustment") == adjustment:
+        return manifest
+    if desc.get("color_adjustment") != adjustment:
+        desc["final_video_dirty"] = True
+    desc["clip_name"] = name
+    desc["color_adjustment"] = adjustment
+    manifest = dict(manifest)
+    manifest["segments"] = segments
+    manifest["updated_at"] = time.time()
+    _write_json_atomic(manifest_path, manifest)
+    return manifest
+
+
 class MiniMaxH3MotionContextDiskJoin:
     @classmethod
     def INPUT_TYPES(cls):
@@ -1029,6 +1052,10 @@ class MiniMaxH3MotionContextDiskJoin:
             "optional": {
                 "previous_cache": (CACHE_TYPE,),
                 "trim_frames": ("INT", {"forceInput": True, "lazy": True}),
+                "clip_name": ("STRING", {"default": "", "tooltip": "Appended to this clip's file name in individual clip exports."}),
+                "saturation": ("FLOAT", {"default": 100.0, "min": 0.0, "max": 200.0, "step": 1.0}),
+                "contrast": ("FLOAT", {"default": 100.0, "min": 50.0, "max": 150.0, "step": 1.0}),
+                "brightness": ("FLOAT", {"default": 100.0, "min": 50.0, "max": 150.0, "step": 1.0}),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
@@ -1056,6 +1083,10 @@ class MiniMaxH3MotionContextDiskJoin:
         fps=24.0,
         previous_cache=None,
         unique_id=None,
+        clip_name=None,
+        saturation=None,
+        contrast=None,
+        brightness=None,
     ):
         try:
             data_path, manifest_path, manifest, mode, stop, index = _effective_state(
@@ -1104,6 +1135,10 @@ class MiniMaxH3MotionContextDiskJoin:
         generation_seed=None,
         generation_clip_id=None,
         first_visible_offset=0,
+        clip_name=None,
+        saturation=None,
+        contrast=None,
+        brightness=None,
     ):
         data_path, manifest_path, manifest, mode, stop, index = _effective_state(
             previous_cache, run_mode, fps, unique_id
@@ -1214,6 +1249,10 @@ class MiniMaxH3MotionContextDiskJoin:
                 if bool(validated)
                 else f"clip {index + 1} candidate cached"
             )
+
+        manifest = _apply_clip_settings(
+            manifest_path, manifest, index, clip_name, saturation, contrast, brightness
+        )
 
         # The first OFF clip terminates only the current incremental execution.
         stop_out = bool(mode == "clip_by_clip" and not bool(validated))
@@ -3568,7 +3607,7 @@ def _video_editor_batch_payload(
             "render_id": _video_editor_render_id(
                 segment_path, desc, export_profile, max(0, int(out_frames))
             ),
-            "label": f"Clip {order_index + 1}",
+            "label": str(desc.get("clip_name") or f"Clip {order_index + 1}"),
             "video_path": str(Path(video_path).resolve()),
             "audio_path": str(Path(audio_path).resolve()),
             "frames": max(0, int(out_frames)),
@@ -3631,6 +3670,7 @@ def _export_video_editor_batch_from_cached_segments(
             prompt=prompt,
             progress=None,
             save_wav=True,
+            clip_names=[d.get("clip_name", "") for d in segments],
         )
         return _video_editor_batch_payload(
             data_path=data_path,
@@ -3788,6 +3828,7 @@ def _export_final_from_exact_segment_caches(
                         prompt=prompt,
                         progress=progress,
                         save_wav=bool(editor_batch_requested),
+                        clip_names=[d.get("clip_name", "") for d in segments],
                     )
                     individual_export_info = {
                         "individual_clips_dir": str(clips_dir),
@@ -3867,6 +3908,7 @@ def _export_individual_final_clips_from_pcm(
     prompt=None,
     progress=None,
     save_wav=False,
+    clip_names=None,
 ):
     """Mux already-final video sidecars with PCM captured during final assembly.
 
@@ -3906,7 +3948,10 @@ def _export_individual_final_clips_from_pcm(
                 )
 
             mux_log = Path(raw_audio).with_suffix(".mux.log")
-            clip_name = f"{Path(output_path).stem}_clip_{i + 1:03d}.{extension}"
+            stem = f"{Path(output_path).stem}_clip_{i + 1:03d}"
+            if clip_names and clip_names[i]:
+                stem = f"{stem}_{_safe_name(clip_names[i])}"
+            clip_name = f"{stem}.{extension}"
             clip_output = staging_dir / clip_name
             try:
                 _mux_final(
@@ -3925,7 +3970,7 @@ def _export_individual_final_clips_from_pcm(
                 )
                 staged_outputs.append(clip_output)
                 if bool(save_wav):
-                    wav_output = staging_dir / f"{Path(output_path).stem}_clip_{i + 1:03d}.wav"
+                    wav_output = staging_dir / f"{stem}.wav"
                     wav_log = Path(raw_audio).with_suffix(".wav.log")
                     try:
                         _raw_f32le_to_wav(

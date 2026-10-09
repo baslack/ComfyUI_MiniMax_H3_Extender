@@ -56,7 +56,9 @@ def test_extender_optional_sockets_only_grow_at_the_end(ext):
             "cache", "vae", "audio_vae", "fps", "filename_prefix", "output_directory", "codec", "crf",
             "preset", "audio_bitrate", "autoplay", "auto_save_project", "save_individual_clips",
         ], []),
-        ("MiniMaxH3MotionContextDiskJoin", ["samples", "validated", "run_mode", "fps"], ["previous_cache", "trim_frames"]),
+        ("MiniMaxH3MotionContextDiskJoin", ["samples", "validated", "run_mode", "fps"], [
+            "previous_cache", "trim_frames", "clip_name", "saturation", "contrast", "brightness",
+        ]),
         # context_latent is optional so the first clip of a chain runs without a previous clip.
         ("MiniMaxH3MotionContextRAM", ["conditioning", "latent", "context_length", "audio_context_length"], ["context_latent"]),
         ("MiniMaxH3TailFromLatent", ["samples", "vae", "audio_vae", "tail_seconds", "align_to_h3_grid"], []),
