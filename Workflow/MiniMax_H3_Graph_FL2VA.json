@@ -499,133 +499,7 @@
           "links": null
         }
       ],
-      "title": "Load Image (clip 1 first frame)",
-      "properties": {
-        "Node name for S&R": "LoadImage"
-      },
-      "widgets_values": [
-        "example.png",
-        "image"
-      ],
-      "widgets_values_named": {
-        "image": "example.png",
-        "upload": "image"
-      }
-    },
-    {
-      "id": 8,
-      "type": "LoadImage",
-      "pos": [
-        0,
-        900
-      ],
-      "size": [
-        282.798828125,
-        102
-      ],
-      "flags": {},
-      "order": 6,
-      "mode": 0,
-      "inputs": [
-        {
-          "localized_name": "image",
-          "name": "image",
-          "type": "COMBO",
-          "widget": {
-            "name": "image"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "choose file to upload",
-          "name": "upload",
-          "type": "IMAGEUPLOAD",
-          "widget": {
-            "name": "upload"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "IMAGE",
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            42
-          ]
-        },
-        {
-          "localized_name": "MASK",
-          "name": "MASK",
-          "type": "MASK",
-          "links": null
-        }
-      ],
-      "title": "Load Image (clip 1 last frame)",
-      "properties": {
-        "Node name for S&R": "LoadImage"
-      },
-      "widgets_values": [
-        "example.png",
-        "image"
-      ],
-      "widgets_values_named": {
-        "image": "example.png",
-        "upload": "image"
-      }
-    },
-    {
-      "id": 9,
-      "type": "LoadImage",
-      "pos": [
-        0,
-        1280
-      ],
-      "size": [
-        282.798828125,
-        102
-      ],
-      "flags": {},
-      "order": 7,
-      "mode": 0,
-      "inputs": [
-        {
-          "localized_name": "image",
-          "name": "image",
-          "type": "COMBO",
-          "widget": {
-            "name": "image"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "choose file to upload",
-          "name": "upload",
-          "type": "IMAGEUPLOAD",
-          "widget": {
-            "name": "upload"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "IMAGE",
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            68
-          ]
-        },
-        {
-          "localized_name": "MASK",
-          "name": "MASK",
-          "type": "MASK",
-          "links": null
-        }
-      ],
-      "title": "Load Image (clip 2 last frame)",
+      "title": "Load Image (first frame)",
       "properties": {
         "Node name for S&R": "LoadImage"
       },
@@ -869,7 +743,7 @@
           "name": "last_frame",
           "shape": 7,
           "type": "IMAGE",
-          "link": 42
+          "link": null
         },
         {
           "localized_name": "integrated_multimodal_description",
@@ -1041,15 +915,15 @@
         "previewExposures": []
       },
       "widgets_values": [
-        "[Shot 1] Live-action, cinematic, a woman (S woman) begins in the pose and framing of Picture 1, holding a closed black umbrella on a rainy street. The camera pulls out with small amplitude at slow speed as she lifts the umbrella, presses the runner up until the canopy opens, and says, <d>[English] Finally.</d> She steps beneath it and settles into the pose and composition of Picture 2 at the end of the shot.",
-        "Rain falls steadily on the pavement, followed by the click of the umbrella runner and the snap of the canopy opening.",
+        "[Shot 1] Live-action, cinematic, the young woman with short red hair and a yellow raincoat shown in <Picture 1> stands at the counter of a dim harbour cafe, keeping her appearance, clothing and the room behind her. She (S mara) smiles and says, <d>[English] Thanks, that's lovely.</d> She picks up a coffee cup from the counter, turns to her left and starts walking toward the window tables. The camera pans left with small amplitude at slow speed to follow her.",
+        "Quiet cafe chatter and the clink of a cup on the counter; rain patters on the windows.",
         "",
         1344,
         768,
         124,
         2001,
         false,
-        "open",
+        "counter",
         100,
         100,
         100
@@ -1101,7 +975,7 @@
           "name": "last_frame",
           "shape": 7,
           "type": "IMAGE",
-          "link": 68
+          "link": null
         },
         {
           "localized_name": "integrated_multimodal_description",
@@ -1270,15 +1144,15 @@
         "previewExposures": []
       },
       "widgets_values": [
-        "[Shot 1] Live-action, cinematic, the woman continues from Picture 1 under the open umbrella and walks along the wet street. The camera tracks beside her at slow speed as the rain eases, until she stops and turns into the framing of Picture 2 at the end of the shot.",
-        "Footsteps splash through shallow puddles; rain thins to a light drizzle.",
-        "Soft acoustic guitar at a moderate tempo, fading out at the end.",
+        "[Shot 1] Live-action, cinematic, continuing from <Picture 1>, the young woman in the yellow raincoat carries her coffee to a small table by the rainy window, sits down and sets the cup in front of her. The camera trucks right with small amplitude at slow speed, keeping her in a medium shot as she looks out at the harbour.",
+        "Rain patters on the window; a chair scrapes softly and the cup clicks on the table.",
+        "Soft acoustic guitar at a slow tempo, fading out at the end.",
         1344,
         768,
         124,
         2002,
         false,
-        "walk",
+        "window",
         100,
         100,
         100
@@ -1354,7 +1228,7 @@
       "title": "How this works",
       "properties": {},
       "widgets_values": [
-        "### MiniMax H3 graph nodes: FL2VA\n- Each clip runs from a **first frame** to a **last frame**. Clip 2 starts from clip 1's last decoded frame (`last_frame` output).\n- Describe the path between the frames, not the frames themselves. *MiniMax H3 Encode* writes the guide's alignment line from the clip length; the **Composed prompt** preview shows it.\n- The clip's Disk Join uses `chain_mode` = hard_cut: clips are joined by cuts, not overlaps.\n- `first_frame_from_previous` is on inside the clip, so a clip that starts from the previous clip's last frame hides that repeated frame (ignored for clip 1). Turn it off for a clip that starts from a fresh image.\n- **Add a clip:** copy a clip node, connect the previous clip's `last_frame` and `cache`, give it a last frame, and move Final Decode to the last clip.\n- Replace the **Load Image** placeholders with your own frames."
+        "### MiniMax H3 graph nodes: keyframe clips (I2VA / FL2VA)\n- Clip 1 starts from a **first frame** image. Clip 2 starts from clip 1's real last frame (`last_frame` output), so every cut lands on a frame the model generated.\n- A clip's `last_frame` input is optional. Connect an image only when a shot must end on a specific picture (FL2VA); the model lands on it at the end of the clip.\n- Describe what happens after the first frame, not the frame itself. *MiniMax H3 Encode* writes the guide's alignment line; the **Composed prompt** preview shows it.\n- Clips are joined with cuts (`chain_mode` = hard_cut) and the handed-over frame isn't shown twice (`first_frame_from_previous`).\n- **Add a clip:** copy a clip node, connect the previous clip's `last_frame` and `cache`, and move Final Decode to the last clip. A pasted clip is an independent copy: changes made inside one clip don't reach the others.\n- Replace the **Load Image** placeholder with your own first frame."
       ],
       "widgets_values_named": {
         "text": "### MiniMax H3 graph nodes: FL2VA\n- Each clip runs from a **first frame** to a **last frame**. Clip 2 starts from clip 1's last decoded frame (`last_frame` output).\n- Describe the path between the frames, not the frames themselves. *MiniMax H3 Encode* writes the guide's alignment line from the clip length; the **Composed prompt** preview shows it.\n- FL2VA clips don't overlap, so `trim_frames` is fixed at 0 inside the clip.\n- **Add a clip:** copy a clip node, connect the previous clip's `last_frame` and `cache`, give it a last frame, and move Final Decode to the last clip.\n- Replace the **Load Image** placeholders with your own frames."
@@ -1402,14 +1276,6 @@
       0,
       35,
       1,
-      "IMAGE"
-    ],
-    [
-      42,
-      8,
-      0,
-      35,
-      2,
       "IMAGE"
     ],
     [
@@ -1507,14 +1373,6 @@
       36,
       10,
       "INT"
-    ],
-    [
-      68,
-      9,
-      0,
-      36,
-      2,
-      "IMAGE"
     ],
     [
       69,

@@ -154,8 +154,9 @@ filled in for you; pick `task_types` to set the tags yourself.
   `cached_samples` as `context_latent`; leave it unconnected for clip 1) →
   `BasicGuider` → `SamplerCustomAdvanced` → **Disk Join**. Use
   `BasicGuider`; H3 does badly with CFG guidance.
-- **Reusing a clip:** keep the clip as a subgraph and duplicate it for the
-  next clip.
+- **Reusing a clip:** keep the clip as a subgraph and copy it for the next
+  clip. A pasted copy is independent: a change made inside one clip doesn't
+  reach the others.
 - **Disk Join settings:** `clip_name` names the clip's file in individual clip
   exports. `saturation`, `contrast` and `brightness` set its colour in Final
   Decode.
@@ -167,11 +168,14 @@ filled in for you; pick `task_types` to set the tags yourself.
   3. Put the first-pass audio back on the refined video.
 
   A refined previous clip is shrunk automatically for the base pass.
-- **FL2VA clips:** these have no motion context. Set `chain_mode` to
-  `hard_cut` on the first Disk Join, so Final Decode joins the clips with cuts.
-  When a clip starts from the previous clip's last frame (via **MiniMax H3
-  Tail From Latent**), turn on its Join's `first_frame_from_previous`, so that
-  frame isn't shown twice.
+- **Keyframe clips (I2VA / FL2VA):** these have no motion context.
+  - Set `chain_mode` to `hard_cut` on the first Disk Join, so Final Decode
+    joins the clips with cuts.
+  - To continue a shot, start the next clip from the previous clip's last
+    frame (via **MiniMax H3 Tail From Latent**) and turn on its Join's
+    `first_frame_from_previous`, so that frame isn't shown twice.
+  - Give a clip a last frame only when it must end on a specific picture.
+    The cut then lands on that picture, so it has to fit the shot.
 
 Continuing an existing video is not available with the graph nodes yet.
 

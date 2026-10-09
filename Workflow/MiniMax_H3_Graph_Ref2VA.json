@@ -1943,7 +1943,7 @@
       "title": "How this works",
       "properties": {},
       "widgets_values": [
-        "### MiniMax H3 graph nodes: Ref2VA\n- **Definitions** name references once; each clip uses only the ones its text mentions. Refer to them as `<Subject mara>`, `<Picture name>`, `<Video name>`, `<Audio name>`.\n- **Speakers** are named too: `(S mara)`, or `(S mara, S barista)` together. Each clip numbers them in the order they first speak.\n- Write `detailed_description` as a style sentence, then `[Shot 1] ...`, `[Shot 2] At 00:03.000, ...`. The **Composed prompt** preview shows exactly what the model gets.\n- **Add a clip:** copy a clip node, connect the previous clip's `cache` and `cached_samples`, and move Final Decode to the last clip. Clip 1 leaves both unconnected.\n- **Refine:** open a clip and un-bypass *MiniMax H3 Refine* (applies to every clip). Set the scale on *Refine scale (all clips)*. The refine pass upscales the video only and keeps the first-pass audio.\n- Replace both **Load Image** placeholders with your own images."
+        "### MiniMax H3 graph nodes: Ref2VA\n- **Definitions** name references once; each clip uses only the ones its text mentions. Refer to them as `<Subject mara>`, `<Picture name>`, `<Video name>`, `<Audio name>`.\n- **Speakers** are named too: `(S mara)`, or `(S mara, S barista)` together. Each clip numbers them in the order they first speak.\n- Write `detailed_description` as a style sentence, then `[Shot 1] ...`, `[Shot 2] At 00:03.000, ...`. The **Composed prompt** preview shows exactly what the model gets.\n- **Add a clip:** copy a clip node, connect the previous clip's `cache` and `cached_samples`, and move Final Decode to the last clip. Clip 1 leaves both unconnected. A pasted clip is an independent copy: changes made inside one clip (such as turning on refine) don't reach the others.\n- **Refine:** open a clip and un-bypass *MiniMax H3 Refine*. The three clips here share one definition, so this turns refine on for all three; do the same in any clip you paste. Set the scale on *Refine scale (all clips)*. The refine pass upscales the video only and keeps the first-pass audio.\n- Replace both **Load Image** placeholders with your own images."
       ],
       "widgets_values_named": {
         "text": "### MiniMax H3 graph nodes: Ref2VA\n- **Definitions** name references once; each clip uses only the ones its text mentions. Refer to them as `<Subject mara>`, `<Picture name>`, `<Video name>`, `<Audio name>`.\n- **Speakers** are named too: `(S mara)`, or `(S mara, S barista)` together. Each clip numbers them in the order they first speak.\n- Write `detailed_description` as a style sentence, then `[Shot 1] ...`, `[Shot 2] At 00:03.000, ...`. The **Composed prompt** preview shows exactly what the model gets.\n- **Add a clip:** copy a clip node, connect the previous clip's `cache` and `cached_samples`, and move Final Decode to the last clip. Clip 1 leaves both unconnected.\n- **Refine:** open a clip and un-bypass *MiniMax H3 Refine* (applies to every clip). Set the scale on *Refine scale (all clips)*.\n- Replace both **Load Image** placeholders with your own images."
@@ -2706,7 +2706,7 @@
                 "strengthTwo": null
               },
               "divider#1": {},
-              "➕ Add Lora": ""
+              "\u2795 Add Lora": ""
             }
           },
           {
