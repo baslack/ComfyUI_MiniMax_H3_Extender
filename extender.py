@@ -105,7 +105,7 @@ from .ref2va_independent import (
     run as _run_ref2va_independent,
 )
 
-BUILD = "minimax-h3-extender-v3.0.8"
+BUILD = "minimax-h3-extender-v3.0.11"
 _LOG = logging.getLogger(__name__)
 FPS = 24
 AUDIO_LATENT_FPS = 40
@@ -2655,6 +2655,60 @@ def _refine_progress(owner, clip_index, clip_count, text):
     _send_extender_progress(owner, clip_index, clip_count, "refining", text)
 
 
+def _release_models_before_refine(clip_model):
+    """Offload H3's finished conditioning/decoding models before Refine sampling.
+
+    The Refine conditioning (including references and Motion Context) must be
+    complete before this is called. Only unload known H3 VAE / text encoder
+    patchers via ComfyUI; never touch the active diffusion model, its clones,
+    or arbitrary models that another node might be using.
+
+    This does not force-load H3 or change its DynamicVRAM/INT8 behavior. The
+    native sampler still decides how to load H3 for the next pass.
+    """
+    manager = comfy.model_management
+    offload_types = {
+        "MiniMaxH3VideoVAE",
+        "MiniMaxH3AudioVAE",
+        "MiniMaxH3TEModel_",
+    }
+    # ComfyUI exposes this model inventory and a model-specific unload API.
+    # Do nothing on older/incompatible ComfyUI installations.
+    if not callable(getattr(manager, "loaded_models", None)) or not callable(
+        getattr(manager, "unload_model_and_clones", None)
+    ):
+        return
+
+    protected = [clip_model]
+    get_additional = getattr(clip_model, "get_nested_additional_models", None)
+    if callable(get_additional):
+        protected.extend(get_additional() or ())
+    protected_uuids = {
+        uuid for model in protected
+        if (uuid := getattr(model, "clone_base_uuid", None)) is not None
+    }
+
+    released = []
+    released_groups = set()
+    for patcher in tuple(manager.loaded_models()):
+        name = type(getattr(patcher, "model", None)).__name__
+        if name not in offload_types:
+            continue
+        group = getattr(patcher, "clone_base_uuid", None)
+        if group is not None and group in released_groups:
+            continue
+        if any(patcher is model for model in protected):
+            continue
+        if group is not None and group in protected_uuids:
+            continue
+        manager.unload_model_and_clones(patcher, unload_additional_models=False)
+        released.append(name)
+        if group is not None:
+            released_groups.add(group)
+    if released:
+        _LOG.info("H3 Refine preflight: offloaded via ComfyUI: %s", ", ".join(released))
+
+
 def _refine_ref2va_sample(
     *, owner, clip_index, clip_count, sampled, clip_model, clip_text_encoder, vae,
     prompt, frame_count, clip_ref_items, clip_ref_blocks, clip_picture_slots,
@@ -2684,6 +2738,7 @@ def _refine_ref2va_sample(
         )
     _refine_progress(owner, clip_index, clip_count, f"Refining clip {clip_index + 1}/{clip_count}")
     refine_sigmas = _resolve_sample_sigmas(external_sigmas, float(refine_denoise))
+    _release_models_before_refine(clip_model)
     refined = _sample_h3(
         clip_model, refine_positive, up_latent, seed, sampler_name, scheduler,
         int(refine_steps), float(refine_denoise), sigmas=refine_sigmas,
@@ -2709,6 +2764,7 @@ def _refine_fl2va_sample(
     )
     refine_sigmas = _resolve_sample_sigmas(external_sigmas, float(refine_denoise))
     _refine_progress(owner, clip_index, clip_count, f"Refining clip {clip_index + 1}/{clip_count}")
+    _release_models_before_refine(clip_model)
     refined = _sample_h3(
         clip_model, refine_positive, up_latent, seed, sampler_name, scheduler,
         int(refine_steps), float(refine_denoise), sigmas=refine_sigmas,
