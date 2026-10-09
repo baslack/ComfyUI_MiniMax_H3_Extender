@@ -104,3 +104,12 @@ def test_changing_the_chain_mode_restarts_the_chain(nodes):
     manifest = _manifest(handle)
     assert manifest["sequence_mode"] == "ref2va_independent"
     assert len(manifest["segments"]) == 1
+
+
+def test_motion_context_keeps_keyframes_already_on_the_conditioning(nodes):
+    last_frame = {"resolved_frame_index": 21, "latent": torch.zeros(1, 24, 1, 4, 6)}
+    conditioning = [[torch.zeros(1, 4, 8), {"minimax_keyframes": [last_frame]}]]
+    out = nodes.MiniMaxH3MotionContextRAM().apply(conditioning, _av(4, 6), _av(4, 6, seed=5), "5", 0)
+    keyframes = out[0][0][1]["minimax_keyframes"]
+    assert keyframes[0] is last_frame
+    assert len(keyframes) > 1 and all(k is not last_frame for k in keyframes[1:])

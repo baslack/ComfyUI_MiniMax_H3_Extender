@@ -532,9 +532,11 @@ class MiniMaxH3MotionContextRAM:
                     "audio_latent": audio_latent,
                 }
             )
+            # Keep keyframes already on the conditioning, e.g. an FL2VA last frame.
+            existing = list(conditioning[0][1].get("minimax_keyframes", []))
             out = node_helpers.conditioning_set_values(
                 conditioning,
-                {"minimax_keyframes": keyframes},
+                {"minimax_keyframes": existing + keyframes},
             )
         else:
             values = {
