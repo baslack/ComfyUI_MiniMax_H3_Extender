@@ -81,3 +81,21 @@ def test_crossfade_follows_the_previous_clips_light(ext):
         expected = raw[fade + k] + last * (1 - (k + 1) / 13)
         assert torch.allclose(means[fade + k], expected, atol=1e-4), k
     assert torch.equal(current[fade + 12:], source[prev + warm - lead + fade + 12:])
+
+
+def test_a_region_that_came_out_brighter_is_matched_too(ext):
+    d = importlib.import_module(f"{ext.pkg.__name__}.motion_context_disk")
+    prev, warm, continued = 8, 5, 20
+    a = torch.full((256, 256, 3), 0.40)
+    copy = a.clone()
+    copy[:128, :128] += 0.10
+    frames = torch.stack([a] * prev + [copy] * (warm + continued))
+    meta = {"previous_frames": prev, "warmup_frames": warm, "continued_frames": continued,
+            "decode_frames": int(frames.shape[0])}
+
+    current, _ = d._decode_pair_video(DecodedVAE(frames), None, meta, 0)
+
+    bright = current[0, 48:80, 48:80]
+    assert torch.allclose(bright, torch.full_like(bright, 0.50 - 0.10 * 12 / 13), atol=1e-4)
+    untouched = current[0, 176:208, 176:208]
+    assert torch.allclose(untouched, torch.full_like(untouched, 0.40), atol=1e-4)
