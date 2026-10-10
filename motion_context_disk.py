@@ -946,6 +946,7 @@ def _truncate_chain(data_path, manifest_path, manifest, index):
     if index == 0:
         reduced["geometry"] = None
     reduced["final_frame_count"] = _final_frame_count(prefix)
+    reduced = _sync_source_lead(data_path, reduced)
     # The assembled preview is derived from the old timeline. A rerun may keep
     # every decoded checkpoint before ``index``, but the joined preview itself
     # must never survive the edit or Final Decode could publish stale pixels.
@@ -2703,10 +2704,10 @@ def _source_frame_count(meta):
 def _sync_source_lead(data_path, manifest):
     """Copy the first clip's lead into Clip 0; a changed lead makes Clip 0's renders stale."""
     source = manifest.get("source_video")
-    segments = manifest.get("segments") or []
-    if not isinstance(source, dict) or not segments or not segments[0].get("continued_from_source"):
+    if not isinstance(source, dict):
         return manifest
-    lead = _seam_lead(segments[0])
+    segments = manifest.get("segments") or []
+    lead = _seam_lead(segments[0]) if segments and segments[0].get("continued_from_source") else 0
     if int(source.get("seam_lead", 0) or 0) == lead:
         return manifest
     paths = [_source_preview_video_path(data_path), _decoded_preview_cache_path(data_path), _decoded_preview_video_cache_path(data_path)]
@@ -6024,7 +6025,7 @@ class MiniMaxH3MotionContextDiskFinalDecode:
                         token=f"clip_editor_{_safe_name(unique_id)}_{uuid.uuid4().hex[:8]}",
                         workflow=workflow,
                         prompt=prompt,
-                        source_meta=source_meta,
+                        source_meta=_source_meta(live_manifest),
                         sync_mode="incremental",
                     )
                     manifest = live_manifest
@@ -6131,6 +6132,9 @@ class MiniMaxH3MotionContextDiskFinalDecode:
             exact_segment_paths.append(final_segment_path)
         all_manifest_segments = [dict(x) for x in manifest.get("segments", [])]
         segments = all_manifest_segments[:len(segments)]
+        # Cutting the first clip's seam can shorten Clip 0.
+        source_meta = _source_meta(manifest)
+        source_frames = _source_frame_count(source_meta)
         color_timeline = _color_timeline(segments, float(fps), source_frames=source_frames)
 
         # Browser preview remains neutral H.264 and independent of final quality.

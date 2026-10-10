@@ -170,3 +170,23 @@ def test_the_first_clip_crossfades_in_from_the_source_and_shortens_it(ext, nodes
     assert manifest["source_video"]["seam_lead"] == lead
     assert d._source_frame_count(manifest["source_video"]) == 72 - lead
     assert d._source_frame_count(manifest["source_video"]) + d._visible_frames(segments, 0) == shown
+
+
+def test_resampling_the_first_clip_clears_the_old_source_lead(ext, nodes, source_video, vaes):
+    d = importlib.import_module(f"{ext.pkg.__name__}.motion_context_disk")
+    handle, _ = _start(nodes, source_video, vaes, "continue_stale_lead")
+    join = nodes.MiniMaxH3MotionContextDiskJoin()
+    common = dict(trim_frames=22, validated=False, run_mode="full_batch", fps=24.0, previous_cache=handle)
+    out = join.join(samples=_av(4, 4), **common)
+    manifest = _manifest(out[0])
+    segments = manifest["segments"]
+    with torch.inference_mode():
+        _, shift = d._render_one_final_video_segment(out[0]["data_path"], segments, 0, DecodedClipVAE(d._frames_from_video_t))
+    d._record_seam_lead(segments, 0, segments[0], shift)
+    d._write_json_atomic(out[0]["manifest_path"], d._sync_source_lead(out[0]["data_path"], dict(manifest, segments=segments)))
+    assert d._source_frame_count(_manifest(out[0])["source_video"]) == 72 + shift
+
+    out = join.join(samples=_av(4, 4), **common)
+
+    assert d._source_frame_count(_manifest(out[0])["source_video"]) == 72
+
