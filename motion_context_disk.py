@@ -33,6 +33,7 @@ import uuid
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import comfy.nested_tensor
 import comfy.utils
 
@@ -1409,20 +1410,31 @@ def _aligned_seam_lead(decoded, prev_frames, warmup, fade):
 SEAM_COLOUR_EASE_FRAMES = 12
 
 
+SEAM_COLOUR_BLOCK = 32
+
+
 def _seam_colour_offset(decoded, frame, warmup):
-    """Per-channel colour of A frame ``frame`` minus B's copy of it."""
-    a = decoded[frame, ..., :3].float().mean(dim=(0, 1))
-    b = decoded[frame + warmup, ..., :3].float().mean(dim=(0, 1))
-    return (a - b).tolist()
+    """A frame ``frame`` minus B's copy of it, as a smooth per-channel map.
+
+    Averaged over blocks and blurred across neighbouring blocks, so it follows
+    broad light, such as a face that came out brighter, and not detail or
+    small differences in motion.
+    """
+    pair = decoded[[frame, frame + warmup], ..., :3].float().movedim(-1, 1)
+    low = F.avg_pool2d(pair, SEAM_COLOUR_BLOCK, ceil_mode=True)
+    low = F.avg_pool2d(low, 3, stride=1, padding=1, count_include_pad=False)
+    offset = F.interpolate(low[:1] - low[1:], size=pair.shape[-2:], mode="bilinear", align_corners=False)
+    return offset[0].movedim(0, -1)
 
 
 def _match_seam_colour(decoded, current_raw, prev_frames, warmup, lead, matched):
     """Keep B on A's brightness and colour through the seam.
 
-    B's copy of A's frames sits a little brighter or darker and wobbles from
-    frame to frame. Each B frame that is crossfaded with A is shifted, per RGB
-    channel, onto A's frame at that instant, so the crossfade only changes the
-    picture, not the light. The last shift then fades out over
+    B's copy of A's frames sits a little brighter or darker, in places as well
+    as overall, and wobbles from frame to frame. Each B frame that is
+    crossfaded with A is shifted, per RGB channel and region, onto A's frame at
+    that instant, so the crossfade only changes the picture, not the light.
+    The last shift then fades out over
     ``SEAM_COLOUR_EASE_FRAMES`` so B settles into its own colour.
     ``current_raw`` is a view into the decoded seam pair, so this works in place.
     """
@@ -1432,15 +1444,13 @@ def _match_seam_colour(decoded, current_raw, prev_frames, warmup, lead, matched)
     offset = None
     for k in range(matched):
         offset = _seam_colour_offset(decoded, first + k, warmup)
-        for c in range(3):
-            current_raw[k, ..., c].add_(offset[c]).clamp_(0.0, 1.0)
+        current_raw[k, ..., :3].add_(offset).clamp_(0.0, 1.0)
     if offset is None:
         offset = _seam_colour_offset(decoded, first - 1, warmup)
     settle = min(SEAM_COLOUR_EASE_FRAMES, int(current_raw.shape[0]) - matched)
     for k in range(settle):
         weight = 1.0 - (k + 1) / (settle + 1)
-        for c in range(3):
-            current_raw[matched + k, ..., c].add_(offset[c] * weight).clamp_(0.0, 1.0)
+        current_raw[matched + k, ..., :3].add_(offset, alpha=weight).clamp_(0.0, 1.0)
 
 
 def _find_ffmpeg():

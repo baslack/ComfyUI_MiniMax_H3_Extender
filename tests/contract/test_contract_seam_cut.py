@@ -24,18 +24,20 @@ class DecodedVAE:
         return self.frames
 
 
-def _square(x):
+def _stripes(x):
+    # Moving stripes keep every block's average light, so the seam colour match leaves them alone.
     frame = torch.zeros(96, 448, 3)
-    frame[32:64, x:x + 32] = 1.0
+    cols = torch.arange(448)
+    frame[32:64] = ((cols - x).div(8, rounding_mode="floor") % 2 == 0).float()[:, None]
     return frame
 
 
 def _pair(in_step_at):
-    """A walks right; B's overlap copy runs one step ahead except at ``in_step_at``."""
+    """A's stripes walk right; B's overlap copy runs one step ahead except at ``in_step_at``."""
     a = [8 * t for t in range(PREV)]
     b_overlap = [8 * t if t == in_step_at else 8 * (t + 1) for t in range(PREV - WARM, PREV)]
     b_new = [8 * (PREV + 1 + t) for t in range(CONTINUED)]
-    frames = torch.stack([_square(x) for x in a + b_overlap + b_new])
+    frames = torch.stack([_stripes(x) for x in a + b_overlap + b_new])
     meta = {"previous_frames": PREV, "warmup_frames": WARM, "continued_frames": CONTINUED,
             "decode_frames": int(frames.shape[0])}
     return frames, meta
