@@ -142,7 +142,12 @@ This fork keeps what they need to chain clips:
   that clip's Motion Context RAM, set to the same `context_length`. Final
   Decode puts the source in front of the clips and crossfades it into the
   first clip like any other seam (`crossfade_frames`). Use a
-  `motion_context` chain, and don't refine the first clip.
+  `motion_context` chain.
+- **Continue Video with refine:** the source is resized to the final size, so
+  with refine on, give Continue Video the refined size: the base size times
+  the refine scale, rounded up to a multiple of 32 (1248x704 at 1.5 is
+  1888x1056). The first clip's base pass shrinks the source tail to its
+  size, and its refine pass uses it at full size.
 
 ## Tests
 
