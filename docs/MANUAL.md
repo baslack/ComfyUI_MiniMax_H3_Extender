@@ -135,6 +135,13 @@ This fork keeps what they need to chain clips:
   `chain_mode` `hard_cut` joins independent clips with plain cuts, and
   `first_frame_from_previous` hides a first frame handed over from the
   previous clip.
+- **Continue Video** starts a chain from an existing video, which becomes
+  Clip 0 as with the Extender node. Connect a file-backed **Load Video**,
+  the VAEs and the clips' final width and height. Its `cache` goes to the
+  first clip's Disk Join as `previous_cache`, and its `context_latent` to
+  that clip's Motion Context RAM, set to the same `context_length`. Final
+  Decode puts the source in front of the clips. Use a `motion_context`
+  chain, and don't refine the first clip.
 
 ## Tests
 
