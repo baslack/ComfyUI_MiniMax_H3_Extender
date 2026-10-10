@@ -301,33 +301,6 @@ def _audio_exact_frames(audio, frames, fps=24.0):
     return {"waveform": waveform, "sample_rate": sr}
 
 
-
-
-
-
-def _luma_map(frames):
-    return (
-        frames[..., 0] * 0.299
-        + frames[..., 1] * 0.587
-        + frames[..., 2] * 0.114
-    )
-
-
-def _luma_stats(frames):
-    y = _luma_map(frames).detach().float().reshape(-1)
-    if int(y.numel()) == 0:
-        return 0.5, 0.1, 0.5
-    return (
-        float(y.mean().item()),
-        float(y.std(unbiased=False).clamp_min(1e-5).item()),
-        float(y.median().item()),
-    )
-
-
-
-
-
-
 def _pad_motion_context_block_to_target(block, target_video):
     """
     MiniMax H3 pads the TARGET video latent internally to the DiT patch grid

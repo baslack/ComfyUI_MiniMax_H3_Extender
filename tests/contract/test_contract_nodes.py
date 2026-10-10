@@ -55,7 +55,7 @@ def test_extender_optional_sockets_only_grow_at_the_end(ext):
         ("MiniMaxH3MotionContextDiskFinalDecode", [
             "cache", "vae", "audio_vae", "fps", "filename_prefix", "output_directory", "codec", "crf",
             "preset", "audio_bitrate", "autoplay", "auto_save_project", "save_individual_clips",
-        ], []),
+        ], ["crossfade_frames"]),
         ("MiniMaxH3MotionContextDiskJoin", ["samples", "validated", "run_mode", "fps"], [
             "previous_cache", "trim_frames", "clip_name", "saturation", "contrast", "brightness",
             "chain_mode", "first_frame_from_previous",
