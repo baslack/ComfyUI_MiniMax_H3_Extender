@@ -115,73 +115,21 @@ the node; delete that folder (or use **New Project**) to reclaim space.
   7 latent frames plus the next clip; lower resolution or clip length if it
   still doesn't fit.
 
-## Graph nodes (experimental)
+## Graph nodes
 
-An alternative to the Extender node: each step is an ordinary node, so clips
-use ComfyUI's own samplers, schedulers, noise and LoRA loaders. The Extender
-node is unchanged. See `Workflow/MiniMax_H3_Graph_Ref2VA.json` and
-`Workflow/MiniMax_H3_Graph_Keyframe.json`.
+The prompt and encode nodes (MiniMax H3 Definition, Definitions, Ref2VA
+Prompt, Keyframe Prompt and Encode) and their sample workflows live in
+[H3PromptCompositionNodes](https://github.com/baslack/H3PromptCompositionNodes).
+This fork keeps what they need to chain clips:
 
-| Node | Does |
-|---|---|
-| **MiniMax H3 Definition** | One named reference. `kind` is Subject (any number of images and videos), Picture, Video (optionally with its soundtrack) or Audio, with the guide's role and retention choices. |
-| **MiniMax H3 Definitions** | Bundles definitions once for every clip. Names must be unique. |
-| **MiniMax H3 Ref2VA Prompt** | One clip's prompt in MiniMax's six-section Ref2VA format. |
-| **MiniMax H3 Keyframe Prompt** | T2VA / I2VA / FL2VA / L2VA prompt; the connected first/last frames pick the task. |
-| **MiniMax H3 Encode** | Prompt + references → `positive`, `latent` and `composed_prompt`, the exact text the model gets. |
-
-**Writing prompts.**
-
-- Refer to definitions by name: `<Subject fred>`, `<Picture opening>`,
-  `<Video dolly>`, `<Audio fredvoice>`, and to a Video definition's soundtrack
-  as `<Audio dolly>`.
-- Inside a definition, `<Picture 1>` / `<Video 1>` mean that node's own first
-  attached image or video.
-- Name speakers: `(S fred)`, or `(S fred, S mara)` when they speak together.
-- Write `detailed_description` in the guide's form: a style sentence, then
-  `[Shot 1] …`, `[Shot 2] At 00:03.000, …`.
-
-Each clip numbers only what its text mentions, in the order the model reads
-it, and speakers in the order they first speak in that clip. An unknown name,
-a name used with the wrong kind, or a speaker who never speaks in the clip
-stops the run with an error naming it. The `retention_analysis` lines,
-including which shots each subject appears in, and the summary's task tags are
-filled in for you; pick `task_types` to set the tags yourself.
-
-**Clips.**
-
-- **Building a clip:** encode → **Motion Context RAM** (previous clip's
-  `cached_samples` as `context_latent`; leave it unconnected for clip 1) →
-  `BasicGuider` → `SamplerCustomAdvanced` → **Disk Join**. Use
-  `BasicGuider`; H3 does badly with CFG guidance.
-- **Reusing a clip:** keep the clip as a subgraph and copy it for the next
-  clip. A pasted copy is independent: a change made inside one clip doesn't
-  reach the others.
-- **Disk Join settings:** `clip_name` names the clip's file in individual clip
-  exports. `saturation`, `contrast` and `brightness` set its colour in Final
-  Decode.
-- **Refine:** refine every clip at the same scale, or none. The sample's
-  refine pass works like the Extender's:
-  1. Split the AV latent and upscale the video only.
-  2. Recombine it for a second Motion Context RAM (with the encoder's
-     `positive`) and sampler.
-  3. Put the first-pass audio back on the refined video.
-
-  A refined previous clip is shrunk automatically for the base pass.
-- **Keyframe clips (I2VA / FL2VA)** use the FL2VA model and the same chain
-  as Ref2VA clips:
-  - The first clip starts from a first frame.
-  - The next clip continues the shot through Motion Context RAM, so motion
-    and sound carry across the join. Keep music and ambience the same in
-    clips that continue a shot.
-  - Give a clip a last frame only when it must end on a specific picture.
-- **Real cuts between shots:** set `chain_mode` to `hard_cut` on the first
-  Disk Join. A clip that starts from the previous clip's last frame (via
-  **MiniMax H3 Tail From Latent**) should turn on its Join's
-  `first_frame_from_previous`, so that frame isn't shown twice. A single
-  frame carries no motion, so the movement restarts at the cut.
-
-Continuing an existing video is not available with the graph nodes yet.
+- **Motion Context RAM:** `context_latent` is optional, so the first clip runs
+  without a previous clip, and a larger (refined) context latent is shrunk to
+  the clip's size.
+- **Disk Join:** `clip_name` names the clip's file in individual clip exports;
+  `saturation`, `contrast` and `brightness` set its colour in Final Decode.
+  `chain_mode` `hard_cut` joins independent clips with plain cuts, and
+  `first_frame_from_previous` hides a first frame handed over from the
+  previous clip.
 
 ## Tests
 
