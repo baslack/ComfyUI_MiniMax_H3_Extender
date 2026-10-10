@@ -129,3 +129,12 @@ def test_a_hard_cut_chain_after_a_source_is_refused(nodes, source_video, vaes):
         nodes.MiniMaxH3MotionContextDiskJoin().join(
             samples=_av(4, 4), trim_frames=22, validated=False, run_mode="full_batch", fps=24.0,
             previous_cache=handle, chain_mode="hard_cut")
+
+
+def test_the_first_clip_after_a_source_asks_for_its_trim(nodes, source_video, vaes):
+    handle, _ = _start(nodes, source_video, vaes, "continue_lazy")
+
+    needed = nodes.MiniMaxH3MotionContextDiskJoin().check_lazy_status(
+        samples=None, trim_frames=None, validated=False, run_mode="full_batch", fps=24.0, previous_cache=handle)
+
+    assert "trim_frames" in needed

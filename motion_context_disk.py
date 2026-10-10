@@ -1254,7 +1254,9 @@ class MiniMaxH3MotionContextDiskJoin:
         needed = []
         if samples is None:
             needed.append("samples")
-        if index > 0 and trim_frames is None and manifest.get("sequence_mode") != HARD_CUT_SEQUENCE:
+        # The first clip after a Continue Video source hides its opening by trim_frames too.
+        continues = index > 0 or _source_meta(manifest) is not None
+        if continues and trim_frames is None and manifest.get("sequence_mode") != HARD_CUT_SEQUENCE:
             needed.append("trim_frames")
         return needed
 
