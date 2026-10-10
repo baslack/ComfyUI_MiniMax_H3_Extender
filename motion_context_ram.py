@@ -366,6 +366,52 @@ def _resize_context_latent(context_latent, target_video):
     return {"samples": comfy.nested_tensor.NestedTensor((video, audio))}
 
 
+def _continue_head_guide_conditioning(base_conditioning, motion_conditioning, guide_latent):
+    """Replace Clip 0's synthetic per-token video Motion Context with one guide.
+
+    This mirrors the native MiniMaxH3AddGuide contract for a multi-frame image
+    batch anchored at frame 0: one VideoVAE latent under ``minimax_keyframes``.
+    Audio conditioning produced by Motion Context is preserved unchanged so its
+    tail remains end-aligned to the Clip 0 -> Clip 1 seam.
+    """
+    if guide_latent is None or getattr(guide_latent, "ndim", 0) != 5:
+        raise ValueError("MiniMax H3 Extender: Clip 0 head guide latent is invalid.")
+
+    out = []
+    for index, item in enumerate(motion_conditioning):
+        meta = dict(item[1])
+        base_meta = {}
+        if index < len(base_conditioning):
+            base_item = base_conditioning[index]
+            if isinstance(base_item, (list, tuple)) and len(base_item) > 1 and isinstance(base_item[1], dict):
+                base_meta = base_item[1]
+
+        # Motion Context's native path represents carried audio as an
+        # audio-only minimax_keyframe. Its compatibility path stores audio in
+        # minimax_refs instead, which is already present in ``meta`` and is
+        # therefore left untouched here.
+        audio_keyframes = []
+        for keyframe in meta.get("minimax_keyframes", []) or []:
+            if isinstance(keyframe, dict) and "audio_latent" in keyframe and "latent" not in keyframe:
+                audio_keyframes.append(keyframe)
+
+        keyframes = list(base_meta.get("minimax_keyframes", []) or [])
+        keyframes.append({
+            "resolved_frame_index": 0,
+            "latent": guide_latent,
+        })
+        keyframes.extend(audio_keyframes)
+        meta["minimax_keyframes"] = keyframes
+        out.append([item[0], meta])
+
+    return out
+
+
+# A context latent built from an existing video carries its RGB tail, VideoVAE-encoded,
+# under this key; it is anchored as one head guide instead of per-token motion context.
+SOURCE_GUIDE_KEY = "minimax_source_guide"
+
+
 class MiniMaxH3MotionContextRAM:
     @classmethod
     def INPUT_TYPES(cls):
@@ -415,6 +461,7 @@ class MiniMaxH3MotionContextRAM:
             return (conditioning, 0, 0, 0, BUILD)
 
         guide_api = _ensure_patches()
+        source_guide = context_latent.get(SOURCE_GUIDE_KEY)
 
         target_video, _ = _streams_from_latent(
             latent, "latent"
@@ -434,6 +481,9 @@ class MiniMaxH3MotionContextRAM:
             )
         if target_video.shape[3:] != source_video.shape[3:]:
             context_latent = _resize_context_latent(context_latent, target_video)
+        if source_guide is not None and source_guide.shape[3:] != target_video.shape[3:]:
+            size = (int(source_guide.shape[2]), int(target_video.shape[3]), int(target_video.shape[4]))
+            source_guide = torch.nn.functional.interpolate(source_guide, size=size, mode="trilinear", align_corners=False)
 
         context_frames = int(context_length)
         target_frame_count = _pixel_frames(
@@ -531,6 +581,9 @@ class MiniMaxH3MotionContextRAM:
                 {"minimax_refs": [audio_ref]},
                 append=True,
             )
+
+        if source_guide is not None:
+            out = _continue_head_guide_conditioning(conditioning, out, source_guide)
 
         _LOG.info(
             "MiniMax H3 Motion Context RAM: %d video frames -> %d latent "
