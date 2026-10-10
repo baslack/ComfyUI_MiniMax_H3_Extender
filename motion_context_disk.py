@@ -34,6 +34,7 @@ import uuid
 import numpy as np
 import torch
 import torch.nn.functional as F
+import comfy.latent_formats
 import comfy.nested_tensor
 import comfy.utils
 
@@ -766,6 +767,23 @@ def _load_manifest(cache):
     return data_path, manifest_path, manifest
 
 
+def _check_continued_clip(source, samples, hard_cut):
+    if hard_cut:
+        raise ValueError(
+            "MiniMax H3 Disk Join: a chain started by Continue Video must use chain_mode "
+            "motion_context, not hard_cut."
+        )
+    video, _ = _streams_from_latent(samples, "samples")
+    scale = comfy.latent_formats.MiniMaxH3Video.spacial_downscale_ratio
+    width, height = int(video.shape[-1]) * scale, int(video.shape[-2]) * scale
+    if (width, height) != (int(source["width"]), int(source["height"])):
+        raise ValueError(
+            f"MiniMax H3 Disk Join: the clip is {width}x{height} but Continue Video made the source "
+            f"{source['width']}x{source['height']}. Give Continue Video the clip's final size "
+            "(refine is not available on the first clip after a source video)."
+        )
+
+
 def _make_handle(
     data_path, manifest_path, manifest, run_mode, stop=False, status="", next_index=None
 ):
@@ -1331,6 +1349,11 @@ class MiniMaxH3MotionContextDiskJoin:
             if samples is None:
                 raise RuntimeError("MiniMax H3 Disk Join: active clip needs samples.")
             trim = 0 if index == 0 or hard_cut else int(trim_frames if trim_frames is not None else 22)
+            source = _source_meta(manifest)
+            if index == 0 and source is not None and not first_visible_offset and trim_frames:
+                _check_continued_clip(source, samples, hard_cut)
+                # The first frames re-create the source's tail; Final Decode shows the source instead.
+                first_visible_offset = int(trim_frames)
 
             if hard_cut:
                 _drop_plan_caches(data_path, [str(x.get("clip_id") or "") for x in segments[index:]] + [f"clip_{index + 1}"])

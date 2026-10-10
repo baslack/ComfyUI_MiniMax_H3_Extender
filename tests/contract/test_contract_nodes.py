@@ -26,6 +26,7 @@ EXTENDER_OPTIONAL = [
     ("key", "returns"),
     [
         ("MiniMaxH3Extender", ("H3_MOTION_DISK_CACHE", "INT", "INT", "STRING", "FLOAT", "STRING")),
+        ("MiniMaxH3ContinueVideo", ("H3_MOTION_DISK_CACHE", "LATENT")),
         ("MiniMaxH3MotionContextDiskFinalDecode", ("VIDEO", "VIDEO_EDITOR_BATCH")),
         ("MiniMaxH3MotionContextDiskJoin", ("H3_MOTION_DISK_CACHE", "LATENT", "INT", "INT", "STRING", "FLOAT", "STRING", "STRING")),
         ("MiniMaxH3MotionContextRAM", ("CONDITIONING", "INT", "INT", "INT", "STRING")),
@@ -52,6 +53,9 @@ def test_extender_optional_sockets_only_grow_at_the_end(ext):
 @pytest.mark.parametrize(
     ("key", "required", "optional"),
     [
+        ("MiniMaxH3ContinueVideo", [
+            "video", "vae", "audio_vae", "width", "height", "context_length", "audio_context_length",
+        ], []),
         ("MiniMaxH3MotionContextDiskFinalDecode", [
             "cache", "vae", "audio_vae", "fps", "filename_prefix", "output_directory", "codec", "crf",
             "preset", "audio_bitrate", "autoplay", "auto_save_project", "save_individual_clips",
