@@ -49,7 +49,7 @@ from aiohttp import web
 from PIL import Image, ImageEnhance, ImageOps
 from server import PromptServer
 
-from .motion_context_ram import MiniMaxH3MotionContextRAM, _streams_from_latent
+from .motion_context_ram import MiniMaxH3MotionContextRAM, _continue_head_guide_conditioning, _streams_from_latent
 from .latent_refine_engine import upscale_for_refine, preserve_first_pass_audio, target_dimensions
 from .prompt_bridge import MAX_PROMPTS, PROMPT_PACK_TYPE, _prompt_pack_signature
 from .reference_bridge import MAX_REFERENCE_SLOTS, REF_PACK_TYPE
@@ -1058,47 +1058,6 @@ def _build_continue_context_latent(vae, audio_vae, data_path, source_meta, conte
     guide_latent = video_tail
     del audio_tail
     return {"samples": comfy.nested_tensor.NestedTensor((video, audio))}, guide_latent
-
-
-def _continue_head_guide_conditioning(base_conditioning, motion_conditioning, guide_latent):
-    """Replace Clip 0's synthetic per-token video Motion Context with one guide.
-
-    This mirrors the native MiniMaxH3AddGuide contract for a multi-frame image
-    batch anchored at frame 0: one VideoVAE latent under ``minimax_keyframes``.
-    Audio conditioning produced by Motion Context is preserved unchanged so its
-    tail remains end-aligned to the Clip 0 -> Clip 1 seam.
-    """
-    if guide_latent is None or getattr(guide_latent, "ndim", 0) != 5:
-        raise ValueError("MiniMax H3 Extender: Clip 0 head guide latent is invalid.")
-
-    out = []
-    for index, item in enumerate(motion_conditioning):
-        meta = dict(item[1])
-        base_meta = {}
-        if index < len(base_conditioning):
-            base_item = base_conditioning[index]
-            if isinstance(base_item, (list, tuple)) and len(base_item) > 1 and isinstance(base_item[1], dict):
-                base_meta = base_item[1]
-
-        # Motion Context's native path represents carried audio as an
-        # audio-only minimax_keyframe. Its compatibility path stores audio in
-        # minimax_refs instead, which is already present in ``meta`` and is
-        # therefore left untouched here.
-        audio_keyframes = []
-        for keyframe in meta.get("minimax_keyframes", []) or []:
-            if isinstance(keyframe, dict) and "audio_latent" in keyframe and "latent" not in keyframe:
-                audio_keyframes.append(keyframe)
-
-        keyframes = list(base_meta.get("minimax_keyframes", []) or [])
-        keyframes.append({
-            "resolved_frame_index": 0,
-            "latent": guide_latent,
-        })
-        keyframes.extend(audio_keyframes)
-        meta["minimax_keyframes"] = keyframes
-        out.append([item[0], meta])
-
-    return out
 
 
 def _load_local_audio_media(desc, cache=None):
