@@ -11,6 +11,7 @@ import importlib
 import json
 import subprocess
 import types
+from pathlib import Path
 
 import pytest
 import torch
@@ -75,8 +76,18 @@ def _manifest(handle):
         return json.load(f)
 
 
-def _start(nodes, source_video, vaes, owner, width=64, height=64):
-    return nodes.MiniMaxH3ContinueVideo().start(source_video, *vaes, width, height, "22", 0, unique_id=owner)
+def _start(nodes, source_video, vaes, owner, width=64, height=64, fit="crop"):
+    return nodes.MiniMaxH3ContinueVideo().start(source_video, *vaes, width, height, "22", 0, fit, unique_id=owner)
+
+
+def _first_working_frame(handle, width, height):
+    imageio_ffmpeg = pytest.importorskip("imageio_ffmpeg")
+    path = Path(handle["data_path"]).with_suffix(".source.mkv")
+    raw = subprocess.run([
+        imageio_ffmpeg.get_ffmpeg_exe(), "-loglevel", "error", "-i", str(path),
+        "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+    ], check=True, capture_output=True).stdout
+    return torch.frombuffer(bytearray(raw), dtype=torch.uint8).reshape(height, width, 3).float()
 
 
 class DecodedClipVAE:
@@ -129,6 +140,26 @@ def test_a_new_source_size_invalidates_the_generated_clips(nodes, source_video, 
     manifest = _manifest(handle)
     assert manifest["segments"] == []
     assert manifest["source_video"]["width"] == 96
+
+
+@pytest.mark.parametrize(("fit", "bars"), [("crop", False), ("pad", True), ("stretch", False)])
+def test_fit_decides_how_a_source_of_another_aspect_ratio_fills_the_frame(nodes, source_video, vaes, fit, bars):
+    handle, _ = _start(nodes, source_video, vaes, f"continue_fit_{fit}", fit=fit)
+
+    frame = _first_working_frame(handle, 64, 64)
+    top_and_bottom = torch.cat([frame[:6], frame[-6:]]).mean().item()
+    assert (top_and_bottom < 20) == bars
+    assert _manifest(handle)["source_video"]["fit"] == fit
+
+
+def test_a_new_fit_invalidates_the_generated_clips(nodes, source_video, vaes):
+    handle, _ = _start(nodes, source_video, vaes, "continue_refit")
+    nodes.MiniMaxH3MotionContextDiskJoin().join(
+        samples=_av(4, 4), trim_frames=22, validated=False, run_mode="full_batch", fps=24.0, previous_cache=handle)
+
+    handle, _ = _start(nodes, source_video, vaes, "continue_refit", fit="pad")
+
+    assert _manifest(handle)["segments"] == []
 
 
 def test_a_hard_cut_chain_after_a_source_is_refused(nodes, source_video, vaes):
