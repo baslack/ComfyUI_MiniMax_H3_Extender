@@ -695,9 +695,9 @@ def _seam_lead(desc):
 
 def _visible_frames(segments, index):
     desc = segments[index]
-    frames = int(desc["frames"])
+    frames = int(desc["frames"]) + _seam_lead(desc)
     if index > 0:
-        frames += _seam_lead(desc) - int(desc.get("trim_frames", 0) or 0)
+        frames -= int(desc.get("trim_frames", 0) or 0)
     if index + 1 < len(segments):
         frames -= _seam_lead(segments[index + 1])
     return frames
@@ -1506,7 +1506,11 @@ def _decode_pair_video(vae, chain, meta, crossfade_frames):
             f"Disk Final Decode: VAE returned {decoded.shape[0]}, "
             f"expected {meta['decode_frames']}."
         )
+    return _cut_seam(decoded, meta, crossfade_frames)
 
+
+def _cut_seam(decoded, meta, crossfade_frames):
+    """Join A (the first previous_frames) to B, which re-creates A's last warmup_frames."""
     prev_frames = int(meta["previous_frames"])
     warmup = int(meta["warmup_frames"])
     fade = max(0, min(int(crossfade_frames), warmup - SEAM_SKIP_FRAMES))
@@ -2550,6 +2554,31 @@ def _source_working_path(data_path):
     return Path(data_path).with_suffix(".source.mkv")
 
 
+def _decode_continue_tail_frames(working_path, width, height, frame_count):
+    """Decode only the small final RGB window needed by VideoVAE."""
+    frame_count = int(frame_count)
+    seconds = max(0.25, (frame_count + 3) / float(FPS))
+    ffmpeg = _find_ffmpeg()
+    cmd = [
+        ffmpeg, "-v", "error", "-sseof", f"-{seconds:.9f}", "-i", str(working_path),
+        "-an", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+    ]
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if proc.returncode != 0 or not proc.stdout:
+        detail = proc.stderr.decode("utf-8", errors="replace")[-3000:]
+        raise RuntimeError(f"MiniMax H3: failed to decode Clip 0 tail. {detail}")
+    frame_bytes = int(width) * int(height) * 3
+    count = len(proc.stdout) // frame_bytes
+    if count < frame_count:
+        raise ValueError(
+            f"MiniMax H3: Clip 0 contains only {count} decodable tail frames; "
+            f"Motion Context is set to {frame_count} frames."
+        )
+    raw = np.frombuffer(proc.stdout[(count - frame_count) * frame_bytes:count * frame_bytes], dtype=np.uint8)
+    raw = raw.reshape(frame_count, int(height), int(width), 3).copy()
+    return torch.from_numpy(raw).float().div_(255.0)
+
+
 def _source_preview_video_path(data_path):
     return Path(data_path).with_suffix(".source.preview.video.mp4")
 
@@ -2577,7 +2606,7 @@ def _ensure_source_preview_video(data_path, manifest, ffmpeg, token):
     enc = _h264_encode_args(chosen_ffmpeg, FULL_BATCH_H264_CACHE_CRF, FULL_BATCH_H264_CACHE_PRESET)
     cmd = [
         chosen_ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-        "-i", str(source), "-map", "0:v:0", "-an",
+        "-i", str(source), "-map", "0:v:0", "-an", "-frames:v", str(_source_frame_count(meta)),
         *enc, "-movflags", "+faststart", str(temp),
     ]
     try:
@@ -2633,7 +2662,7 @@ def _ensure_source_final_video(data_path, manifest, ffmpeg, export_profile, toke
         enc = _h264_encode_args(chosen_ffmpeg, profile["crf"], profile["preset"], force_cpu=force_cpu)
     cmd = [
         chosen_ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-        "-i", str(source), "-map", "0:v:0", "-an", *enc,
+        "-i", str(source), "-map", "0:v:0", "-an", "-frames:v", str(_source_frame_count(meta)), *enc,
     ]
     if target.suffix.lower() == ".mp4":
         cmd += ["-movflags", "+faststart"]
@@ -2656,12 +2685,34 @@ def _ensure_source_final_video(data_path, manifest, ffmpeg, export_profile, toke
 
 
 def _source_frame_count(meta):
+    """Frames of Clip 0 that are shown: a first clip that crossfades in from it ends it early."""
     if not isinstance(meta, dict):
         return 0
     value = int(meta.get("frame_count", 0) or 0)
     if value <= 0:
         value = int(round(float(meta.get("duration", 0.0) or 0.0) * float(meta.get("fps", FPS) or FPS)))
-    return max(0, value)
+    return max(0, value - int(meta.get("seam_lead", 0) or 0))
+
+
+def _sync_source_lead(data_path, manifest):
+    """Copy the first clip's lead into Clip 0; a changed lead makes Clip 0's renders stale."""
+    source = manifest.get("source_video")
+    segments = manifest.get("segments") or []
+    if not isinstance(source, dict) or not segments or not segments[0].get("continued_from_source"):
+        return manifest
+    lead = _seam_lead(segments[0])
+    if int(source.get("seam_lead", 0) or 0) == lead:
+        return manifest
+    paths = [_source_preview_video_path(data_path), _decoded_preview_cache_path(data_path), _decoded_preview_video_cache_path(data_path)]
+    final_dir = Path(data_path).with_suffix(".final.video")
+    if final_dir.exists():
+        paths += list(final_dir.glob("source_*"))
+    for path in paths:
+        Path(path).unlink(missing_ok=True)
+    manifest = dict(manifest)
+    manifest["source_video"] = dict(source, seam_lead=lead)
+    manifest.pop("preview_committed_count", None)
+    return manifest
 
 
 def _write_source_pcm_prefix(ffmpeg, source_path, meta, file_obj, sample_rate, channels):
@@ -2868,6 +2919,7 @@ def _cache_candidate_render(
     segments[idx] = desc
     updated = dict(manifest)
     updated["segments"] = segments
+    updated = _sync_source_lead(data_path, updated)
     updated["build"] = BUILD
     updated["updated_at"] = time.time()
     _write_json_atomic(manifest_path, updated)
@@ -3460,9 +3512,17 @@ def _render_one_final_video_segment(
             raise RuntimeError(
                 "H3 progressive preview: Clip 1 visible window lies outside its source latent."
             )
+        del v
+        if curr.get("continued_from_source"):
+            # The hidden opening re-creates Clip 0's last frames, so this seam is cut like any other.
+            tail = _decode_continue_tail_frames(
+                _source_working_path(data_path), int(video.shape[2]), int(video.shape[1]), visible_offset
+            ).to(video)
+            meta = {"previous_frames": visible_offset, "warmup_frames": visible_offset, "continued_frames": visible_frames}
+            video, shift = _cut_seam(torch.cat((tail, video)), meta, _seam_crossfade(curr))
+            return _drop_next_lead(video, segments, i), int(shift)
         if visible_offset or visible_frames != source_frames:
             video = video[visible_offset:visible_offset + visible_frames]
-        del v
         return _drop_next_lead(video, segments, i), 0
 
     prev = segments[i - 1]
@@ -3494,6 +3554,9 @@ def _render_one_final_audio_segment(
     curr = segments[i]
 
     if i == 0:
+        lead = max(0, -int(seam_shift))
+        if lead:
+            curr = dict(curr, visible_offset=int(curr["visible_offset"]) - lead, frames=int(curr["frames"]) + lead)
         audio = _decode_single_audio(data_path, curr, audio_vae, fps)
         if progress is not None:
             progress.advance()
@@ -4258,7 +4321,7 @@ def cache_full_batch_ref2va_segment(
     )
     is_tail = idx == len(segments) - 1
     video_ready = isinstance(desc.get("decoded_mp4_blob"), dict)
-    shift_ready = idx == 0 or "seam_lead" in desc
+    shift_ready = (idx == 0 and not desc.get("continued_from_source")) or "seam_lead" in desc
     cached_audio = _load_cached_decoded_audio(data_path, desc)
     audio_ready = cached_audio is not None
     if cached_audio is not None:
@@ -4325,7 +4388,7 @@ def cache_full_batch_ref2va_segment(
             segments = [dict(x) for x in manifest.get("segments", [])]
             desc = dict(segments[idx])
             video_ready = isinstance(desc.get("decoded_mp4_blob"), dict)
-            shift_ready = idx == 0 or "seam_lead" in desc
+            shift_ready = (idx == 0 and not desc.get("continued_from_source")) or "seam_lead" in desc
 
         # While the decoded RGB tensor is still resident, encode the exact final
         # segment directly. If the neutral preview was already cached, this helper
@@ -4452,7 +4515,7 @@ def _ensure_ref2va_audio_cache(
                 del cached
                 continue
 
-            if i == 0:
+            if i == 0 and not desc.get("continued_from_source"):
                 seam_shift = 0
             elif "seam_lead" in desc:
                 seam_shift = int(desc.get("decoded_seam_shift", 0) or 0)
@@ -4494,6 +4557,7 @@ def _ensure_ref2va_audio_cache(
     if changed:
         manifest = dict(manifest)
         manifest["segments"] = full_segments
+        manifest = _sync_source_lead(data_path, manifest)
         manifest["build"] = BUILD
         manifest["updated_at"] = time.time()
         _write_json_atomic(manifest_path, manifest)

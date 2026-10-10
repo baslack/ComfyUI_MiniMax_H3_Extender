@@ -79,6 +79,7 @@ from .motion_context_disk import (
     normalize_full_batch_export_profile,
     _find_ffmpeg,
     _resolve_full_batch_export_profile,
+    _decode_continue_tail_frames,
 )
 from .fl2va_engine import (
     normalize_mode as _normalize_generation_mode,
@@ -934,31 +935,6 @@ def _prepare_continue_source_random_access(
         requested_resolution = None
 
     return manifest, source_meta, requested_resolution, str(target_resize_mode), source_working_changed
-
-
-def _decode_continue_tail_frames(working_path, width, height, frame_count):
-    """Decode only the small final RGB window needed by VideoVAE."""
-    frame_count = int(frame_count)
-    seconds = max(0.25, (frame_count + 3) / float(FPS))
-    ffmpeg = _find_ffmpeg()
-    cmd = [
-        ffmpeg, "-v", "error", "-sseof", f"-{seconds:.9f}", "-i", str(working_path),
-        "-an", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
-    ]
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if proc.returncode != 0 or not proc.stdout:
-        detail = proc.stderr.decode("utf-8", errors="replace")[-3000:]
-        raise RuntimeError(f"MiniMax H3 Extender: failed to decode Clip 0 tail. {detail}")
-    frame_bytes = int(width) * int(height) * 3
-    count = len(proc.stdout) // frame_bytes
-    if count < frame_count:
-        raise ValueError(
-            f"MiniMax H3 Extender: Clip 0 contains only {count} decodable tail frames; "
-            f"Motion Context is set to {frame_count} frames."
-        )
-    raw = np.frombuffer(proc.stdout[(count - frame_count) * frame_bytes:count * frame_bytes], dtype=np.uint8)
-    raw = raw.reshape(frame_count, int(height), int(width), 3).copy()
-    return torch.from_numpy(raw).float().div_(255.0)
 
 
 def _decode_continue_tail_audio(working_path, audio_frames, audio_vae):

@@ -140,8 +140,9 @@ This fork keeps what they need to chain clips:
   the VAEs and the clips' final width and height. Its `cache` goes to the
   first clip's Disk Join as `previous_cache`, and its `context_latent` to
   that clip's Motion Context RAM, set to the same `context_length`. Final
-  Decode puts the source in front of the clips. Use a `motion_context`
-  chain, and don't refine the first clip.
+  Decode puts the source in front of the clips and crossfades it into the
+  first clip like any other seam (`crossfade_frames`). Use a
+  `motion_context` chain, and don't refine the first clip.
 
 ## Tests
 
