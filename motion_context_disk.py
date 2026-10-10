@@ -486,8 +486,6 @@ class _FinalDecodeNativeProgress:
 CACHE_TYPE = "H3_MOTION_DISK_CACHE"
 _LOG = logging.getLogger("minimax_h3_tail_from_latent.motion_context_disk")
 
-_NODE_DIR = Path(__file__).resolve().parent
-_CACHE_ROOT = _NODE_DIR / "cache"
 _DATA_MAGIC = b"H3MCACHE12\x00"
 _DATA_START = len(_DATA_MAGIC)
 _AUDIO_CACHE_MAGIC = b"H3MAUDIO1\x00"
@@ -521,8 +519,11 @@ def _safe_name(value):
 
 
 def _ensure_cache_root():
-    _CACHE_ROOT.mkdir(parents=True, exist_ok=True)
-    return _CACHE_ROOT
+    # Persistent per-install state: it must survive restarts (ComfyUI wipes
+    # temp/) and node reinstalls, so it lives in ComfyUI's user directory.
+    root = Path(folder_paths.get_user_directory()) / "h3_extender_cache"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 def _chain_paths(owner_id):
