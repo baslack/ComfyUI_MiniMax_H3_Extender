@@ -163,7 +163,7 @@ def test_the_first_clip_crossfades_in_from_the_source_and_shortens_it(ext, nodes
         video, shift = d._render_one_final_video_segment(out[0]["data_path"], segments, 0, DecodedClipVAE(d._frames_from_video_t))
 
     lead = -shift
-    assert d.SEAM_SKIP_FRAMES <= lead <= 22
+    assert lead == min(d.SEAM_CROSSFADE_FRAMES, 22 - d.SOURCE_GUIDE_SETTLE_FRAMES)
     assert video.shape[0] == segments[0]["frames"] + lead
     d._record_seam_lead(segments, 0, segments[0], shift)
     manifest = d._sync_source_lead(out[0]["data_path"], dict(manifest, segments=segments))

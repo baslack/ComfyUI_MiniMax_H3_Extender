@@ -1513,8 +1513,9 @@ def _cut_seam(decoded, meta, crossfade_frames):
     """Join A (the first previous_frames) to B, which re-creates A's last warmup_frames."""
     prev_frames = int(meta["previous_frames"])
     warmup = int(meta["warmup_frames"])
-    fade = max(0, min(int(crossfade_frames), warmup - SEAM_SKIP_FRAMES))
-    lead = _aligned_seam_lead(decoded, prev_frames, warmup, fade) if fade else 0
+    earliest = int(meta.get("earliest_cut", prev_frames - warmup))
+    fade = max(0, min(int(crossfade_frames), warmup - SEAM_SKIP_FRAMES, prev_frames - earliest))
+    lead = _aligned_seam_lead(decoded, prev_frames, warmup, fade, earliest) if fade else 0
     start = prev_frames + warmup - lead
     end = prev_frames + warmup + int(meta["continued_frames"])
     if start < prev_frames or end > int(decoded.shape[0]):
@@ -1530,9 +1531,13 @@ def _cut_seam(decoded, meta, crossfade_frames):
 
 SEAM_CROSSFADE_FRAMES = 10
 SEAM_SKIP_FRAMES = 4
+# A first clip copies its Continue Video source through one head guide. Its first
+# VideoVAE chunk (5 latent steps, 17 frames) can jump where the guide hands over,
+# so the crossfade from the source starts after it.
+SOURCE_GUIDE_SETTLE_FRAMES = 17
 
 
-def _aligned_seam_lead(decoded, prev_frames, warmup, fade):
+def _aligned_seam_lead(decoded, prev_frames, warmup, fade, earliest):
     """How many frames before the nominal cut B should take over.
 
     B re-creates A's last ``warmup`` frames: B's version of A frame t is decoded
@@ -1540,13 +1545,14 @@ def _aligned_seam_lead(decoded, prev_frames, warmup, fade):
     frame ahead at the very end, so cutting at the end of the overlap makes the
     picture jump forward. Centre the ``fade``-frame crossfade on the overlap
     frame where B best matches A, skipping B's first frames while it settles in.
+    The crossfade never starts before A frame ``earliest``.
     """
-    first = prev_frames - warmup + SEAM_SKIP_FRAMES
+    first = max(prev_frames - warmup + SEAM_SKIP_FRAMES, earliest)
     a = decoded[first:prev_frames, ::8, ::8, :3].float()
     b = decoded[first + warmup:prev_frames + warmup, ::8, ::8, :3].float()
     errors = (a - b).abs().mean(dim=(1, 2, 3)).tolist()
     best = first + min(range(len(errors)), key=errors.__getitem__)
-    cut = min(max(best - fade // 2, prev_frames - warmup), prev_frames - fade)
+    cut = min(max(best - fade // 2, earliest), prev_frames - fade)
     return prev_frames - cut
 
 
@@ -2561,7 +2567,7 @@ def _decode_continue_tail_frames(working_path, width, height, frame_count):
     ffmpeg = _find_ffmpeg()
     cmd = [
         ffmpeg, "-v", "error", "-sseof", f"-{seconds:.9f}", "-i", str(working_path),
-        "-an", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+        "-an", "-sws_flags", "accurate_rnd+full_chroma_int", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
     ]
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if proc.returncode != 0 or not proc.stdout:
@@ -3518,7 +3524,10 @@ def _render_one_final_video_segment(
             tail = _decode_continue_tail_frames(
                 _source_working_path(data_path), int(video.shape[2]), int(video.shape[1]), visible_offset
             ).to(video)
-            meta = {"previous_frames": visible_offset, "warmup_frames": visible_offset, "continued_frames": visible_frames}
+            meta = {
+                "previous_frames": visible_offset, "warmup_frames": visible_offset, "continued_frames": visible_frames,
+                "earliest_cut": SOURCE_GUIDE_SETTLE_FRAMES,
+            }
             video, shift = _cut_seam(torch.cat((tail, video)), meta, _seam_crossfade(curr))
             return _drop_next_lead(video, segments, i), int(shift)
         if visible_offset or visible_frames != source_frames:
