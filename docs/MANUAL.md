@@ -90,6 +90,11 @@ once, and writes the video (H.264, H.265 or FFV1). Options include autoplay,
 node also has a native `VIDEO` output and a **Save Preview** button that saves
 the current preview with workflow metadata.
 
+With motion context, each clip blends into the next over **crossfade_frames**
+frames (default 10), around the point where the two clips are in step; 0 cuts
+at the end of the overlap. Changing it re-cuts the seams without sampling
+again.
+
 ## Projects
 
 - **Save Project** writes a portable `.ext` archive: prompts, settings,
