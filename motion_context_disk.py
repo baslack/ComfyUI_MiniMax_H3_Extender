@@ -1012,6 +1012,80 @@ def _effective_state(previous_cache, run_mode, fps, unique_id):
     return data_path, manifest_path, manifest, mode, stop, index
 
 
+def _apply_clip_settings(manifest_path, manifest, index, clip_name, saturation, contrast, brightness):
+    """Store the node's clip name and colour on its segment; the Extender passes neither."""
+    if clip_name is None and saturation is None:
+        return manifest
+    segments = [dict(x) for x in manifest.get("segments", [])]
+    desc = segments[index]
+    adjustment = _normalize_color_adjustment(
+        {"saturation": saturation, "contrast": contrast, "brightness": brightness}
+    )
+    name = str(clip_name or "").strip()
+    if desc.get("clip_name", "") == name and desc.get("color_adjustment") == adjustment:
+        return manifest
+    if desc.get("color_adjustment") != adjustment:
+        desc["final_video_dirty"] = True
+    desc["clip_name"] = name
+    desc["color_adjustment"] = adjustment
+    manifest = dict(manifest)
+    manifest["segments"] = segments
+    manifest["updated_at"] = time.time()
+    _write_json_atomic(manifest_path, manifest)
+    return manifest
+
+
+HARD_CUT_SEQUENCE = "ref2va_independent"
+
+
+def _drop_plan_caches(data_path, clip_ids):
+    from . import fl2va_engine
+    for clip_id in clip_ids:
+        if clip_id:
+            fl2va_engine._invalidate_plan_video_cache(data_path, clip_id)
+
+
+def _set_chain_mode(data_path, manifest_path, manifest, chain_mode):
+    """The first Join decides how Final Decode joins the chain; changing it restarts the chain."""
+    wanted = HARD_CUT_SEQUENCE if chain_mode == "hard_cut" else "ref2va"
+    if str(manifest.get("sequence_mode") or "ref2va") == wanted:
+        return manifest
+    segments = manifest.get("segments", [])
+    if segments:
+        _drop_plan_caches(data_path, [str(x.get("clip_id") or "") for x in segments])
+        manifest = _truncate_chain(data_path, manifest_path, manifest, 0)
+    manifest = dict(manifest)
+    manifest["sequence_mode"] = wanted
+    manifest["updated_at"] = time.time()
+    _write_json_atomic(manifest_path, manifest)
+    return manifest
+
+
+def _apply_cut_settings(data_path, manifest_path, manifest, index, first_frame_from_previous):
+    """Hard-cut clips get a stable id, and hide a first frame copied from the previous clip."""
+    if manifest.get("sequence_mode") != HARD_CUT_SEQUENCE:
+        return manifest
+    segments = [dict(x) for x in manifest.get("segments", [])]
+    desc = segments[index]
+    clip_id = str(desc.get("clip_id") or f"clip_{index + 1}")
+    offset = 1 if bool(first_frame_from_previous) and index > 0 else 0
+    source_frames = int(desc.get("source_frames", desc.get("frames", 0)) or 0)
+    if desc.get("clip_id") == clip_id and int(desc.get("visible_offset", 0) or 0) == offset:
+        return manifest
+    if int(desc.get("visible_offset", 0) or 0) != offset:
+        _drop_plan_caches(data_path, [clip_id])
+    desc["clip_id"] = clip_id
+    desc["source_frames"] = source_frames
+    desc["visible_offset"] = offset
+    desc["frames"] = source_frames - offset
+    manifest = dict(manifest)
+    manifest["segments"] = segments
+    manifest["final_frame_count"] = _final_frame_count(segments)
+    manifest["updated_at"] = time.time()
+    _write_json_atomic(manifest_path, manifest)
+    return manifest
+
+
 class MiniMaxH3MotionContextDiskJoin:
     @classmethod
     def INPUT_TYPES(cls):
@@ -1031,6 +1105,14 @@ class MiniMaxH3MotionContextDiskJoin:
             "optional": {
                 "previous_cache": (CACHE_TYPE,),
                 "trim_frames": ("INT", {"forceInput": True, "lazy": True}),
+                "clip_name": ("STRING", {"default": "", "tooltip": "Appended to this clip's file name in individual clip exports."}),
+                "saturation": ("FLOAT", {"default": 100.0, "min": 0.0, "max": 200.0, "step": 1.0}),
+                "contrast": ("FLOAT", {"default": 100.0, "min": 50.0, "max": 150.0, "step": 1.0}),
+                "brightness": ("FLOAT", {"default": 100.0, "min": 50.0, "max": 150.0, "step": 1.0}),
+                "chain_mode": (["motion_context", "hard_cut"], {"default": "motion_context",
+                    "tooltip": "Set on the first Join for the whole chain. motion_context: clips overlap through Motion Context RAM. hard_cut: independent clips joined by cuts, e.g. FL2VA."}),
+                "first_frame_from_previous": ("BOOLEAN", {"default": False,
+                    "tooltip": "hard_cut only: this clip starts from the previous clip's last frame. Its first frame is hidden so the cut doesn't repeat a frame."}),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
@@ -1058,6 +1140,12 @@ class MiniMaxH3MotionContextDiskJoin:
         fps=24.0,
         previous_cache=None,
         unique_id=None,
+        clip_name=None,
+        saturation=None,
+        contrast=None,
+        brightness=None,
+        chain_mode=None,
+        first_frame_from_previous=None,
     ):
         try:
             data_path, manifest_path, manifest, mode, stop, index = _effective_state(
@@ -1088,7 +1176,7 @@ class MiniMaxH3MotionContextDiskJoin:
         needed = []
         if samples is None:
             needed.append("samples")
-        if index > 0 and trim_frames is None:
+        if index > 0 and trim_frames is None and manifest.get("sequence_mode") != HARD_CUT_SEQUENCE:
             needed.append("trim_frames")
         return needed
 
@@ -1106,6 +1194,12 @@ class MiniMaxH3MotionContextDiskJoin:
         generation_seed=None,
         generation_clip_id=None,
         first_visible_offset=0,
+        clip_name=None,
+        saturation=None,
+        contrast=None,
+        brightness=None,
+        chain_mode=None,
+        first_frame_from_previous=None,
     ):
         data_path, manifest_path, manifest, mode, stop, index = _effective_state(
             previous_cache, run_mode, fps, unique_id
@@ -1135,6 +1229,11 @@ class MiniMaxH3MotionContextDiskJoin:
             raise RuntimeError(
                 f"MiniMax H3 Disk Join: invalid chain index {index}/{len(segments)}."
             )
+
+        if index == 0 and chain_mode is not None:
+            manifest = _set_chain_mode(data_path, manifest_path, manifest, chain_mode)
+            segments = [dict(x) for x in manifest.get("segments", [])]
+        hard_cut = manifest.get("sequence_mode") == HARD_CUT_SEQUENCE
 
         existing = index < len(segments)
 
@@ -1171,8 +1270,10 @@ class MiniMaxH3MotionContextDiskJoin:
             # invalidates/truncates the entire downstream tail in one operation.
             if samples is None:
                 raise RuntimeError("MiniMax H3 Disk Join: active clip needs samples.")
-            trim = 0 if index == 0 else int(trim_frames if trim_frames is not None else 22)
+            trim = 0 if index == 0 or hard_cut else int(trim_frames if trim_frames is not None else 22)
 
+            if hard_cut:
+                _drop_plan_caches(data_path, [str(x.get("clip_id") or "") for x in segments[index:]] + [f"clip_{index + 1}"])
             if existing or len(segments) > index:
                 manifest = _truncate_chain(data_path, manifest_path, manifest, index)
                 segments = [dict(x) for x in manifest.get("segments", [])]
@@ -1216,6 +1317,11 @@ class MiniMaxH3MotionContextDiskJoin:
                 if bool(validated)
                 else f"clip {index + 1} candidate cached"
             )
+
+        manifest = _apply_cut_settings(data_path, manifest_path, manifest, index, first_frame_from_previous)
+        manifest = _apply_clip_settings(
+            manifest_path, manifest, index, clip_name, saturation, contrast, brightness
+        )
 
         # The first OFF clip terminates only the current incremental execution.
         stop_out = bool(mode == "clip_by_clip" and not bool(validated))
@@ -3618,7 +3724,7 @@ def _video_editor_batch_payload(
             "render_id": _video_editor_render_id(
                 segment_path, desc, export_profile, max(0, int(out_frames))
             ),
-            "label": f"Clip {order_index + 1}",
+            "label": str(desc.get("clip_name") or f"Clip {order_index + 1}"),
             "video_path": str(Path(video_path).resolve()),
             "audio_path": str(Path(audio_path).resolve()),
             "frames": max(0, int(out_frames)),
@@ -3684,6 +3790,7 @@ def _export_video_editor_batch_from_cached_segments(
             prompt=prompt,
             progress=None,
             save_wav=True,
+            clip_names=[d.get("clip_name", "") for d in segments],
             editor_temporary=True,
         )
         batch = _video_editor_batch_payload(
@@ -3844,6 +3951,7 @@ def _export_final_from_exact_segment_caches(
                         prompt=prompt,
                         progress=progress,
                         save_wav=bool(editor_batch_requested),
+                        clip_names=[d.get("clip_name", "") for d in segments],
                         editor_temporary=bool(editor_batch_requested and not save_individual_clips),
                     )
                     individual_export_info = {
@@ -3928,6 +4036,7 @@ def _export_individual_final_clips_from_pcm(
     prompt=None,
     progress=None,
     save_wav=False,
+    clip_names=None,
     editor_temporary=False,
 ):
     """Mux already-final video sidecars with PCM captured during final assembly.
@@ -3976,7 +4085,10 @@ def _export_individual_final_clips_from_pcm(
                 )
 
             mux_log = Path(raw_audio).with_suffix(".mux.log")
-            clip_name = f"{Path(output_path).stem}_clip_{i + 1:03d}.{extension}"
+            stem = f"{Path(output_path).stem}_clip_{i + 1:03d}"
+            if clip_names and clip_names[i]:
+                stem = f"{stem}_{_safe_name(clip_names[i])}"
+            clip_name = f"{stem}.{extension}"
             clip_output = staging_dir / clip_name
             try:
                 _mux_final(
@@ -3995,7 +4107,7 @@ def _export_individual_final_clips_from_pcm(
                 )
                 staged_outputs.append(clip_output)
                 if bool(save_wav):
-                    wav_output = staging_dir / f"{Path(output_path).stem}_clip_{i + 1:03d}.wav"
+                    wav_output = staging_dir / f"{stem}.wav"
                     wav_log = Path(raw_audio).with_suffix(".wav.log")
                     try:
                         _raw_f32le_to_wav(

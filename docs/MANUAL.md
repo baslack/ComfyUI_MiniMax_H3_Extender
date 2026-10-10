@@ -115,6 +115,22 @@ the node; delete that folder (or use **New Project**) to reclaim space.
   7 latent frames plus the next clip; lower resolution or clip length if it
   still doesn't fit.
 
+## Graph nodes
+
+The prompt and encode nodes (MiniMax H3 Definition, Definitions, Ref2VA
+Prompt, Keyframe Prompt and Encode) and their sample workflows live in
+[H3PromptCompositionNodes](https://github.com/baslack/H3PromptCompositionNodes).
+This fork keeps what they need to chain clips:
+
+- **Motion Context RAM:** `context_latent` is optional, so the first clip runs
+  without a previous clip, and a larger (refined) context latent is shrunk to
+  the clip's size.
+- **Disk Join:** `clip_name` names the clip's file in individual clip exports;
+  `saturation`, `contrast` and `brightness` set its colour in Final Decode.
+  `chain_mode` `hard_cut` joins independent clips with plain cuts, and
+  `first_frame_from_previous` hides a first frame handed over from the
+  previous clip.
+
 ## Tests
 
 See `tests/contract/README.md` for the local contract test suite.

@@ -386,6 +386,13 @@ def _pad_motion_context_block_to_target(block, target_video):
     return padded
 
 
+def _resize_context_latent(context_latent, target_video):
+    """Match the previous clip's spatial grid to the target, e.g. a refined clip feeding a base-size pass."""
+    video, audio = _streams_from_latent(context_latent, "context_latent")
+    size = (int(video.shape[2]), int(target_video.shape[3]), int(target_video.shape[4]))
+    video = torch.nn.functional.interpolate(video, size=size, mode="trilinear", align_corners=False)
+    return {"samples": comfy.nested_tensor.NestedTensor((video, audio))}
+
 
 class MiniMaxH3MotionContextRAM:
     @classmethod
@@ -394,7 +401,6 @@ class MiniMaxH3MotionContextRAM:
             "required": {
                 "conditioning": ("CONDITIONING",),
                 "latent": ("LATENT",),
-                "context_latent": ("LATENT",),
                 "context_length": (
                     ["22", "5", "39", "56"],
                     {"default": "22"},
@@ -408,7 +414,10 @@ class MiniMaxH3MotionContextRAM:
                         "step": 1,
                     },
                 ),
-            }
+            },
+            "optional": {
+                "context_latent": ("LATENT", {"tooltip": "Previous clip. Leave unconnected for the first clip."}),
+            },
         }
 
     RETURN_TYPES = ("CONDITIONING", "INT", "INT", "INT", "STRING")
@@ -426,10 +435,13 @@ class MiniMaxH3MotionContextRAM:
         self,
         conditioning,
         latent,
-        context_latent,
-        context_length,
-        audio_context_length,
+        context_latent=None,
+        context_length="22",
+        audio_context_length=0,
     ):
+        if context_latent is None:
+            return (conditioning, 0, 0, 0, BUILD)
+
         guide_api = _ensure_patches()
 
         target_video, _ = _streams_from_latent(
@@ -449,14 +461,7 @@ class MiniMaxH3MotionContextRAM:
                 "MiniMax H3 Motion Context RAM: video latent channels differ."
             )
         if target_video.shape[3:] != source_video.shape[3:]:
-            sw = int(source_video.shape[4]) * 16
-            sh = int(source_video.shape[3]) * 16
-            tw = int(target_video.shape[4]) * 16
-            th = int(target_video.shape[3]) * 16
-            raise ValueError(
-                "MiniMax H3 Motion Context RAM: resolution mismatch "
-                f"{sw}x{sh} -> {tw}x{th}. Latent motion context cannot resize."
-            )
+            context_latent = _resize_context_latent(context_latent, target_video)
 
         context_frames = int(context_length)
         target_frame_count = _pixel_frames(
@@ -527,9 +532,11 @@ class MiniMaxH3MotionContextRAM:
                     "audio_latent": audio_latent,
                 }
             )
+            # Keep keyframes already on the conditioning, e.g. an FL2VA last frame.
+            existing = list(conditioning[0][1].get("minimax_keyframes", []))
             out = node_helpers.conditioning_set_values(
                 conditioning,
-                {"minimax_keyframes": keyframes},
+                {"minimax_keyframes": existing + keyframes},
             )
         else:
             values = {
