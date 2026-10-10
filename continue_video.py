@@ -8,6 +8,7 @@ tail through Motion Context RAM.
 import time
 
 from .extender import (
+    CONTINUE_FIT_FILTERS,
     FPS,
     _build_continue_context_latent,
     _clear_continue_source_derivatives,
@@ -37,6 +38,7 @@ class MiniMaxH3ContinueVideo:
                 "height": ("INT", {"default": 704, "min": 32, "max": 4096, "step": 16}),
                 "context_length": (["22", "5", "39", "56"], {"default": "22", "tooltip": "Set the first clip's Motion Context RAM to the same value."}),
                 "audio_context_length": ("INT", {"default": 0, "min": 0, "max": 240, "step": 1}),
+                "fit": (list(CONTINUE_FIT_FILTERS), {"default": "crop", "tooltip": "A source of another aspect ratio: crop fills the frame and cuts the overflow, pad fits it inside black bars, stretch distorts it."}),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
@@ -50,7 +52,7 @@ class MiniMaxH3ContinueVideo:
         "and context_latent to its Motion Context RAM."
     )
 
-    def start(self, video, vae, audio_vae, width, height, context_length="22", audio_context_length=0, unique_id=None):
+    def start(self, video, vae, audio_vae, width, height, context_length="22", audio_context_length=0, fit="crop", unique_id=None):
         desc = _continue_video_from_native_input(video)
         data_path, manifest_path, manifest = _manifest_for_first(unique_id if unique_id is not None else "continue_video", FPS)
 
@@ -58,13 +60,14 @@ class MiniMaxH3ContinueVideo:
         if (
             source.get("id") != desc["id"]
             or (int(source.get("width", 0)), int(source.get("height", 0))) != (int(width), int(height))
+            or source.get("fit") != fit
             or not _continue_source_working_path(data_path).exists()
         ):
-            # A different source or size invalidates every generated clip.
+            # A different source, size or fit invalidates every generated clip.
             if manifest.get("segments"):
                 manifest = _truncate_chain(data_path, manifest_path, manifest, 0)
             _clear_continue_source_derivatives(data_path)
-            source = _normalize_continue_source(data_path, desc, int(width), int(height), "manual")
+            source = _normalize_continue_source(data_path, desc, int(width), int(height), "manual", fit)
             manifest = dict(manifest)
             manifest["source_video"] = source
             manifest["updated_at"] = time.time()

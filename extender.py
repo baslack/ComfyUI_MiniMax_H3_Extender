@@ -737,8 +737,18 @@ def _validate_continue_source_geometry(desc):
     return _validate_continue_working_geometry(width, height, mode=str(desc.get("resize_mode") or "manual"))
 
 
-def _normalize_continue_source(data_path, desc, target_width, target_height, resize_mode="original"):
+CONTINUE_FIT_FILTERS = {
+    # crop: fill the frame and cut the overflow; pad: fit inside with black bars; stretch: ignore the aspect ratio
+    "crop": "scale={w}:{h}:flags=lanczos:force_original_aspect_ratio=increase,crop={w}:{h}",
+    "pad": "scale={w}:{h}:flags=lanczos:force_original_aspect_ratio=decrease:force_divisible_by=2,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2",
+    "stretch": "scale={w}:{h}:flags=lanczos",
+}
+
+
+def _normalize_continue_source(data_path, desc, target_width, target_height, resize_mode="original", fit="stretch"):
     """Create the disk working copy at the selected size and 24 fps without loading the full source in RAM."""
+    if fit not in CONTINUE_FIT_FILTERS:
+        raise ValueError(f"MiniMax H3 Extender: unknown Clip 0 fit '{fit}'.")
     desc = _normalize_media_descriptor(desc, "video")
     if desc is None:
         raise ValueError("MiniMax H3 Extender: invalid continue_existing_video descriptor.")
@@ -760,7 +770,7 @@ def _normalize_continue_source(data_path, desc, target_width, target_height, res
         "-vf", (
             f"fps={FPS}"
             if (source_width == width and source_height == height)
-            else f"scale={width}:{height}:flags=lanczos,fps={FPS}"
+            else CONTINUE_FIT_FILTERS[fit].format(w=width, h=height) + f",fps={FPS}"
         ),
         # High-quality working copy. Resize + FPS normalization happen in this
         # single disk-to-disk FFmpeg pass; the immutable source stays untouched.
@@ -802,6 +812,7 @@ def _normalize_continue_source(data_path, desc, target_width, target_height, res
         "source_width": int(source_width),
         "source_height": int(source_height),
         "resize_mode": str(resize_mode or "original"),
+        "fit": fit,
         "original_fps": float(desc.get("fps", 0.0) or 0.0),
         "fps": float(FPS),
         "duration": float(meta.get("duration", desc.get("duration", 0.0)) or 0.0),
