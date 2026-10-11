@@ -125,6 +125,25 @@ the chain is named after that node's id, so two workflows with the same node
 ids, such as a workflow and its copy, share one cache. Give each workflow its
 own project name to keep their clips apart.
 
+The Project node shows its cache's clips, size and last update, and has
+buttons to **Wipe this cache** and to open **All caches**, which lists every
+cache with **Use** (point this node at it), **Rename** and **Wipe**. Use
+Rename to adopt a cache made without a project, such as `44_26`. Wipe and
+Rename refuse while a prompt is running.
+
+With ComfyUI closed, `h3cache.py` in this node's folder does the same from a
+terminal, using ComfyUI's Python:
+
+```
+python custom_nodes/ComfyUI_MiniMax_H3_Extender/h3cache.py list
+python custom_nodes/ComfyUI_MiniMax_H3_Extender/h3cache.py rename 44_26 my-project
+python custom_nodes/ComfyUI_MiniMax_H3_Extender/h3cache.py wipe my-project --yes
+```
+
+`wipe` without `--yes` only shows what it would delete. Wipe and rename
+refuse while ComfyUI is running (`--port` if it isn't on 8188); `list`
+always works.
+
 ## Troubleshooting
 
 - **"Latent Refine needs a learned upscaler"**: see *Requirements*; connect the

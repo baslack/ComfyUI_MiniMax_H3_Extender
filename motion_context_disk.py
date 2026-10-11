@@ -50,6 +50,7 @@ try:
 except Exception:  # static tests outside ComfyUI
     folder_paths = None
 
+from .cache_library import project_name as _project_name
 from .motion_context_ram import (
     FPS,
     _audio_exact_frames,
@@ -531,20 +532,6 @@ def _chain_paths(owner_id):
     root = _ensure_cache_root()
     stem = "chain_" + _safe_name(owner_id)
     return root / f"{stem}.h3cache", root / f"{stem}.json"
-
-
-PROJECT_NAME = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?")
-
-
-def _project_name(name):
-    """A project's name, used as is in its cache file names."""
-    name = str(name).strip()
-    if not PROJECT_NAME.fullmatch(name):
-        raise ValueError(
-            f"MiniMax H3 Project: '{name}' is not a valid project name. Use letters, digits, "
-            "'-' and '_', starting and ending with a letter or digit."
-        )
-    return name
 
 
 def _decoded_audio_cache_path(data_path):
