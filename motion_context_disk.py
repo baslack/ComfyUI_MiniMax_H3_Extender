@@ -3435,6 +3435,58 @@ def _concat_mp4_video_stream_copy(ffmpeg, inputs, output_path, log_path):
     return _concat_video_stream_copy(ffmpeg, inputs, output_path, log_path)
 
 
+def _committed_tail_frames(segments, count, source_meta):
+    """Where the committed preview's last clip starts, and how many of its frames stay.
+
+    The committed preview always ends with its last clip at full length: the
+    next clip's seam lead is not known when it is committed.
+    """
+    last = int(count) - 1
+    head = _source_frame_count(source_meta) + sum(_visible_frames(segments, i) for i in range(last))
+    return head, _visible_frames(segments, last)
+
+
+def _trim_committed_tail(ffmpeg, prefix_path, head_frames, keep_frames, output_path, token):
+    """Copy the committed preview, keeping only ``keep_frames`` of its last clip.
+
+    The next clip takes over before that clip ends, so its last frames would show
+    twice. The clip starts on a keyframe: the clips before it are stream-copied
+    and only it is re-encoded.
+    """
+    root = _ensure_cache_root()
+    head = root / f"_{token}_prefix_head.mp4"
+    tail = root / f"_{token}_prefix_tail.mp4"
+    log_path = root / f"_{token}_prefix_trim.log"
+    encoder = _preferred_h264_ffmpeg(ffmpeg)
+    commands = [[
+        encoder, "-y", "-i", str(prefix_path), "-map", "0:v:0",
+        "-vf", f"trim=start_frame={int(head_frames)}:end_frame={int(head_frames) + int(keep_frames)},setpts=PTS-STARTPTS",
+        "-an", *_h264_encode_args(encoder, 17, "ultrafast"), str(tail),
+    ]]
+    parts = [tail]
+    if head_frames > 0:
+        commands.insert(0, [
+            ffmpeg, "-y", "-i", str(prefix_path), "-map", "0:v:0", "-c:v", "copy",
+            "-frames:v", str(int(head_frames)), "-an", str(head),
+        ])
+        parts.insert(0, head)
+    try:
+        for cmd in commands:
+            with open(log_path, "wb") as log_f:
+                code = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=log_f).returncode
+            if code != 0:
+                tail_log = Path(log_path).read_bytes()[-12000:].decode("utf-8", errors="replace")
+                raise RuntimeError(f"H3 preview prefix trim failed with code {code}.\n{tail_log}")
+        _concat_video_stream_copy(ffmpeg, parts, output_path, log_path)
+    finally:
+        for p in (head, tail, log_path):
+            try:
+                if p.exists():
+                    p.unlink()
+            except OSError:
+                pass
+
+
 def _assemble_progressive_preview(
     ffmpeg,
     video_inputs,
@@ -4647,6 +4699,12 @@ def _sync_committed_preview(
     mux_log = root / f"_{token}_commit_mux.log"
 
     try:
+        if not rebuild and _seam_lead(segments[start_i]):
+            trimmed_prefix = root / f"_{token}_commit_prefix.mp4"
+            temp_segments.append(trimmed_prefix)
+            head, keep = _committed_tail_frames(segments, start_i, source_meta)
+            _trim_committed_tail(ffmpeg, committed_video_path, head, keep, trimmed_prefix, token)
+            video_inputs = [trimmed_prefix]
         for i in range(start_i, target):
             desc = segments[i]
             segment_tmp = root / f"_{token}_commit_{i:04d}.mp4"
@@ -4667,9 +4725,11 @@ def _sync_committed_preview(
                     "H3 incremental cache repair: decoding missing Ref2VA clip %d only",
                     i + 1,
                 )
+                # Without the clips after it, the last committed clip keeps its
+                # full length, like a freshly committed one.
                 video, _ = _render_one_final_video_segment(
                     data_path,
-                    segments,
+                    segments[:target],
                     i,
                     vae,
                 )
@@ -4829,6 +4889,7 @@ def _export_live_candidate_preview(
     )
 
     candidate_mp4 = root / f"_{token}_candidate.mp4"
+    trimmed_prefix = root / f"_{token}_candidate_prefix.mp4"
 
     try:
         _encode_corrected_segment_video_mp4(
@@ -4891,8 +4952,14 @@ def _export_live_candidate_preview(
         # rebuilt from lossless per-clip PCM and encoded ONCE for the complete
         # preview, so AAC priming/padding can never sit on an internal seam.
         source_meta = _source_meta(manifest)
+        segments = [dict(x) for x in manifest.get("segments", [])]
         if committed_video_path.exists() and validated_count > 0:
-            video_inputs = [committed_video_path, candidate_mp4]
+            prefix = committed_video_path
+            if _seam_lead(segments[candidate_index]):
+                prefix = trimmed_prefix
+                head, keep = _committed_tail_frames(segments, candidate_index, source_meta)
+                _trim_committed_tail(ffmpeg, committed_video_path, head, keep, prefix, token)
+            video_inputs = [prefix, candidate_mp4]
         else:
             source_preview_path = (
                 _ensure_source_preview_video(data_path, manifest, ffmpeg, token)
@@ -4900,7 +4967,6 @@ def _export_live_candidate_preview(
                 else None
             )
             video_inputs = ([source_preview_path] if source_preview_path is not None else []) + [candidate_mp4]
-        segments = [dict(x) for x in manifest.get("segments", [])]
         _assemble_progressive_preview(
             ffmpeg,
             video_inputs,
@@ -4937,7 +5003,7 @@ def _export_live_candidate_preview(
         )
 
     finally:
-        for p in (candidate_mp4,):
+        for p in (candidate_mp4, trimmed_prefix):
             try:
                 if Path(p).exists():
                     Path(p).unlink()
@@ -5041,7 +5107,13 @@ def _restore_cached_preview_without_decode(owner_id, final_id, generation_mode="
             and committed_count < len(segments)
             and committed_video_path.exists()
         ):
-            video_inputs.append(committed_video_path)
+            prefix = committed_video_path
+            if _seam_lead(segments[committed_count]):
+                prefix = root / f"_{token}_prefix.mp4"
+                segment_files.append(prefix)
+                head, keep = _committed_tail_frames(segments, committed_count, source_meta)
+                _trim_committed_tail(_find_ffmpeg(), committed_video_path, head, keep, prefix, token)
+            video_inputs.append(prefix)
             start_i = committed_count
         elif source_meta is not None:
             source_preview_path = _ensure_source_preview_video(
