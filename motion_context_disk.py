@@ -483,6 +483,7 @@ class _FinalDecodeNativeProgress:
 
 
 CACHE_TYPE = "H3_MOTION_DISK_CACHE"
+PROJECT_TYPE = "H3_PROJECT"
 _LOG = logging.getLogger("minimax_h3_tail_from_latent.motion_context_disk")
 
 _SEAM_PREVIOUS_TOKENS = 7
@@ -530,6 +531,20 @@ def _chain_paths(owner_id):
     root = _ensure_cache_root()
     stem = "chain_" + _safe_name(owner_id)
     return root / f"{stem}.h3cache", root / f"{stem}.json"
+
+
+PROJECT_NAME = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?")
+
+
+def _project_name(name):
+    """A project's name, used as is in its cache file names."""
+    name = str(name).strip()
+    if not PROJECT_NAME.fullmatch(name):
+        raise ValueError(
+            f"MiniMax H3 Project: '{name}' is not a valid project name. Use letters, digits, "
+            "'-' and '_', starting and ending with a letter or digit."
+        )
+    return name
 
 
 def _decoded_audio_cache_path(data_path):
@@ -1082,14 +1097,17 @@ def _manifest_for_first(owner_id, fps):
     return data_path, manifest_path, manifest
 
 
-def _effective_state(previous_cache, run_mode, fps, unique_id):
+def _effective_state(previous_cache, run_mode, fps, unique_id, project=None):
     if previous_cache is not None:
         data_path, manifest_path, manifest = _load_manifest(previous_cache)
         mode = str(previous_cache.get("run_mode", run_mode))
         stop = bool(previous_cache.get("stop", False))
         index = int(previous_cache.get("next_index", len(manifest.get("segments", []))))
     else:
-        owner = unique_id if unique_id is not None else "first_join"
+        if project is not None:
+            owner = _project_name(project)
+        else:
+            owner = unique_id if unique_id is not None else "first_join"
         data_path, manifest_path, manifest = _manifest_for_first(owner, fps)
         mode = str(run_mode)
         stop = False
@@ -1205,6 +1223,7 @@ class MiniMaxH3MotionContextDiskJoin:
                     "tooltip": "Set on the first Join for the whole chain. motion_context: clips overlap through Motion Context RAM. hard_cut: independent clips joined by cuts, e.g. FL2VA."}),
                 "first_frame_from_previous": ("BOOLEAN", {"default": False,
                     "tooltip": "hard_cut only: this clip starts from the previous clip's last frame. Its first frame is hidden so the cut doesn't repeat a frame."}),
+                "project": (PROJECT_TYPE, {"tooltip": "Names the chain's cache files, from MiniMax H3 Project. Only the chain's first Join reads it; without it the cache is named after this node."}),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
@@ -1238,10 +1257,11 @@ class MiniMaxH3MotionContextDiskJoin:
         brightness=None,
         chain_mode=None,
         first_frame_from_previous=None,
+        project=None,
     ):
         try:
             data_path, manifest_path, manifest, mode, stop, index = _effective_state(
-                previous_cache, run_mode, fps, unique_id
+                previous_cache, run_mode, fps, unique_id, project
             )
         except Exception:
             # Let execute surface the real error; request the minimum normal path.
@@ -1294,9 +1314,10 @@ class MiniMaxH3MotionContextDiskJoin:
         brightness=None,
         chain_mode=None,
         first_frame_from_previous=None,
+        project=None,
     ):
         data_path, manifest_path, manifest, mode, stop, index = _effective_state(
-            previous_cache, run_mode, fps, unique_id
+            previous_cache, run_mode, fps, unique_id, project
         )
         segments = [dict(x) for x in manifest.get("segments", [])]
 
