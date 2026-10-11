@@ -144,6 +144,30 @@ python custom_nodes/ComfyUI_MiniMax_H3_Extender/h3cache.py wipe my-project --yes
 refuse while ComfyUI is running (`--port` if it isn't on 8188); `list`
 always works.
 
+**Archive** packs a project into one `.h3project` file: its cache, the
+workflow as it is now and every file in `input/` the workflow loads.
+Previews and decoded videos are left out; the next Final Decode makes them
+again from the latents, about one VAE decode per clip. **Restore** unpacks
+one, under its archived name or a new one:
+
+- the cache never replaces an existing one;
+- an input file that is already there with the same contents is reused; a
+  different file with that name is kept, and the archived one is restored
+  as `<name>_restored1.<ext>` with the workflow pointing at it;
+- the workflow is saved to your workflows with its Project node set to the
+  restored name.
+
+The node archives to `output/h3_projects/` and restores from there. From a
+terminal:
+
+```
+python custom_nodes/ComfyUI_MiniMax_H3_Extender/h3cache.py archive my-project --workflow user/default/workflows/my.json
+python custom_nodes/ComfyUI_MiniMax_H3_Extender/h3cache.py restore my-project_20261011_120000.h3project --name my-project-2
+```
+
+Archive only reads, so it works while ComfyUI runs, but don't archive a
+project that is rendering. Restore refuses while ComfyUI is running.
+
 ## Troubleshooting
 
 - **"Latent Refine needs a learned upscaler"**: see *Requirements*; connect the
