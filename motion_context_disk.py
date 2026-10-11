@@ -643,13 +643,16 @@ def _final_frame_count(segments):
 
 
 def _record_seam_lead(segments, index, desc, seam_shift):
-    """Store a clip's seam; a changed lead shortens the previous clip, so its renders are stale."""
+    """Store a clip's seam; a changed lead shortens the previous clip, so its preview render is stale.
+
+    The previous clip's final video records its frame count, so Final Decode
+    finds it stale only when the lead really moved.
+    """
     lead = max(0, -int(seam_shift))
     changed = desc.get("seam_lead") != lead
     if index > 0 and changed:
         prev = dict(segments[index - 1])
         prev.pop("decoded_mp4_blob", None)
-        prev["final_video_dirty"] = True
         segments[index - 1] = prev
     desc["decoded_seam_shift"] = int(seam_shift)
     desc["seam_lead"] = lead
@@ -3134,7 +3137,7 @@ def _ensure_ref2va_final_segment_cache(
         color_adjustment if color_adjustment is not None else desc.get("color_adjustment")
     )
     path = _ref2va_final_segment_cache_path(data_path, idx, profile)
-    if _final_segment_cache_meta_matches(desc, profile, adjustment, path):
+    if _final_segment_cache_meta_matches(desc, profile, adjustment, path, visible_frames=_visible_frames(segments, idx)):
         return manifest, path, False
 
     own_decode = decoded_video is None
@@ -3164,7 +3167,7 @@ def _ensure_ref2va_final_segment_cache(
         )
         os.replace(temp, path)
         manifest, _ = _tag_ref2va_final_segment_cache(
-            manifest_path, manifest, idx, profile, adjustment
+            manifest_path, manifest, idx, profile, adjustment, visible_frames=int(video.shape[0])
         )
         return manifest, path, bool(own_decode)
     finally:
@@ -3446,6 +3449,24 @@ def _committed_tail_frames(segments, count, source_meta):
     return head, _visible_frames(segments, last)
 
 
+def _run_preview_ffmpeg(cmd, log_path):
+    with open(log_path, "wb") as log_f:
+        code = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=log_f).returncode
+    if code != 0:
+        tail_log = Path(log_path).read_bytes()[-12000:].decode("utf-8", errors="replace")
+        raise RuntimeError(f"H3 preview ffmpeg failed with code {code}.\n{tail_log}")
+
+
+def _encode_preview_frames(ffmpeg, source_path, start_frame, frames, output_path, log_path):
+    """Re-encode ``frames`` frames of ``source_path`` from ``start_frame`` as a preview segment."""
+    encoder = _preferred_h264_ffmpeg(ffmpeg)
+    _run_preview_ffmpeg([
+        encoder, "-y", "-i", str(source_path), "-map", "0:v:0",
+        "-vf", f"trim=start_frame={int(start_frame)}:end_frame={int(start_frame) + int(frames)},setpts=PTS-STARTPTS",
+        "-an", *_h264_encode_args(encoder, 17, "ultrafast"), str(output_path),
+    ], log_path)
+
+
 def _trim_committed_tail(ffmpeg, prefix_path, head_frames, keep_frames, output_path, token):
     """Copy the committed preview, keeping only ``keep_frames`` of its last clip.
 
@@ -3457,26 +3478,15 @@ def _trim_committed_tail(ffmpeg, prefix_path, head_frames, keep_frames, output_p
     head = root / f"_{token}_prefix_head.mp4"
     tail = root / f"_{token}_prefix_tail.mp4"
     log_path = root / f"_{token}_prefix_trim.log"
-    encoder = _preferred_h264_ffmpeg(ffmpeg)
-    commands = [[
-        encoder, "-y", "-i", str(prefix_path), "-map", "0:v:0",
-        "-vf", f"trim=start_frame={int(head_frames)}:end_frame={int(head_frames) + int(keep_frames)},setpts=PTS-STARTPTS",
-        "-an", *_h264_encode_args(encoder, 17, "ultrafast"), str(tail),
-    ]]
     parts = [tail]
-    if head_frames > 0:
-        commands.insert(0, [
-            ffmpeg, "-y", "-i", str(prefix_path), "-map", "0:v:0", "-c:v", "copy",
-            "-frames:v", str(int(head_frames)), "-an", str(head),
-        ])
-        parts.insert(0, head)
     try:
-        for cmd in commands:
-            with open(log_path, "wb") as log_f:
-                code = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=log_f).returncode
-            if code != 0:
-                tail_log = Path(log_path).read_bytes()[-12000:].decode("utf-8", errors="replace")
-                raise RuntimeError(f"H3 preview prefix trim failed with code {code}.\n{tail_log}")
+        if head_frames > 0:
+            _run_preview_ffmpeg([
+                ffmpeg, "-y", "-i", str(prefix_path), "-map", "0:v:0", "-c:v", "copy",
+                "-frames:v", str(int(head_frames)), "-an", str(head),
+            ], log_path)
+            parts.insert(0, head)
+        _encode_preview_frames(ffmpeg, prefix_path, head_frames, keep_frames, tail, log_path)
         _concat_video_stream_copy(ffmpeg, parts, output_path, log_path)
     finally:
         for p in (head, tail, log_path):
@@ -4542,15 +4552,17 @@ def _ensure_ref2va_audio_cache(
     fps,
     count=None,
     progress=None,
+    ffmpeg=None,
+    export_profile=None,
 ):
     """Append only missing Ref2VA decoded PCM entries in timeline order.
 
     Fresh resumable Full Batch runs normally create these entries while each
     clip is completed. If ``audio_vae`` was not connected to the Extender, Final
     Decode fills only the missing PCM here. Persisted ``decoded_seam_shift``
-    metadata means this path does not need VideoVAE again. Legacy clips without
-    that metadata may require a one-time video seam decode to recover the exact
-    shift.
+    metadata means this path does not need VideoVAE again. A clip without it
+    (one that Disk Join cached as latents only) is decoded once to find its
+    seam; with ``export_profile`` that decode also becomes its final video.
     """
     if audio_vae is None:
         raise ValueError("H3 Final Decode: audio_vae is required to build the audio cache.")
@@ -4582,9 +4594,8 @@ def _ensure_ref2va_audio_cache(
             elif "seam_lead" in desc:
                 seam_shift = int(desc.get("decoded_seam_shift", 0) or 0)
             else:
-                # Compatibility for old caches created before per-clip seam
-                # shifts were persisted. Repair this clip only; never replay the
-                # complete project through VideoVAE.
+                # Repair this clip only; never replay the complete project
+                # through VideoVAE.
                 _LOG.info(
                     "H3 incremental cache repair: recovering seam shift for Ref2VA clip %d only",
                     i + 1,
@@ -4592,11 +4603,19 @@ def _ensure_ref2va_audio_cache(
                 video, seam_shift = _render_one_final_video_segment(
                     data_path, full_segments, i, vae
                 )
-                del video
                 if _record_seam_lead(full_segments, i, desc, seam_shift):
                     # This clip was rendered with its old cut.
                     desc.pop("decoded_mp4_blob", None)
                     desc["final_video_dirty"] = True
+                if export_profile is not None:
+                    full_segments[i] = desc
+                    manifest, _, _ = _ensure_ref2va_final_segment_cache(
+                        data_path, manifest_path, dict(manifest, segments=full_segments), i,
+                        vae, fps, ffmpeg, export_profile, decoded_video=video,
+                    )
+                    full_segments = [dict(x) for x in manifest["segments"]]
+                    desc = full_segments[i]
+                del video
 
             audio = _render_one_final_audio_segment(
                 data_path,
@@ -4709,18 +4728,27 @@ def _sync_committed_preview(
             desc = segments[i]
             segment_tmp = root / f"_{token}_commit_{i:04d}.mp4"
             blob = desc.get("decoded_mp4_blob")
+            # Decoded audio is already present in the primary per-clip audio
+            # cache and is never decoded again here.
+            if blob is None and _load_cached_decoded_audio(data_path, desc) is None:
+                raise RuntimeError(
+                    "H3 progressive preview: decoded audio cache is missing."
+                )
+            # Full Batch keeps no per-clip preview video. Its final video
+            # holds the same frames when it is cut for this preview and has no
+            # colour baked in, so re-encoding it replaces a decode.
+            profile = _full_batch_manifest_export_profile(manifest)
+            final_path = _ref2va_final_segment_cache_path(data_path, i, profile)
+            visible = _visible_frames(segments[:target], i)
+            adjustment = desc.get("color_adjustment")
             if blob is not None:
                 _copy_blob_to_file(data_path, blob, segment_tmp)
+            elif _color_is_neutral(adjustment) and _final_segment_cache_meta_matches(
+                desc, profile, adjustment, final_path, visible_frames=visible
+            ):
+                _encode_preview_frames(ffmpeg, final_path, 0, visible, segment_tmp, video_log)
             else:
-                # Full Batch does not need to keep duplicate per-clip decoded
-                # video files. When entering Clip by Clip, bootstrap only the
-                # required video prefix from latent cache. Decoded audio is
-                # already present in the primary per-clip audio cache and is
-                # never decoded again here.
-                if _load_cached_decoded_audio(data_path, desc) is None:
-                    raise RuntimeError(
-                        "H3 progressive preview: decoded audio cache is missing."
-                    )
+                # Bootstrap only this clip from the latent cache.
                 _LOG.info(
                     "H3 incremental cache repair: decoding missing Ref2VA clip %d only",
                     i + 1,
@@ -6074,6 +6102,7 @@ class MiniMaxH3MotionContextDiskFinalDecode:
                     live_manifest, live_segments = _ensure_ref2va_audio_cache(
                         data_path, manifest_path, live_manifest, vae, audio_vae, float(fps),
                         count=len(live_segments), progress=None,
+                        ffmpeg=ffmpeg, export_profile=clip_by_clip_export_profile,
                     )
                     editor_segment_paths = []
                     for i in range(len(live_segments)):
@@ -6179,6 +6208,8 @@ class MiniMaxH3MotionContextDiskFinalDecode:
             float(fps),
             count=len(segments),
             progress=progress,
+            ffmpeg=ffmpeg,
+            export_profile=export_profile,
         )
         if interrupted:
             segments = [dict(x) for x in segments[:snapshot_count]]
