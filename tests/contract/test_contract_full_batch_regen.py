@@ -80,3 +80,66 @@ def test_regenerating_the_last_clip_decodes_only_that_clip(ext):
     assert _frames(preview) == total
     assert result["ui"]["h3_preview_info"][0]["preview_frames"] == total
     assert _frames(result["result"][0].get_stream_source()) == total
+
+
+def _rerun_validated(nodes, count):
+    """Run the first ``count`` clips again as validated, as when the clips after them are bypassed."""
+    handle = None
+    for _ in range(count):
+        kwargs = {"previous_cache": handle} if handle is not None else {}
+        handle = nodes["MiniMaxH3MotionContextDiskJoin"]().join(
+            validated=True, run_mode="full_batch", fps=24.0, unique_id="full_batch_regen", **kwargs)[0]
+    return handle
+
+
+def test_bypassed_clips_are_left_out_of_the_video_and_kept_in_the_cache(ext):
+    d = importlib.import_module(f"{ext.pkg.__name__}.motion_context_disk")
+    nodes = ext.pkg.NODE_CLASS_MAPPINGS
+    vae = CountingVAE(d._frames_from_video_t)
+    handle = None
+    for seed in range(1, 5):
+        handle = _join(nodes, seed, handle)
+    with torch.inference_mode():
+        _final_decode(nodes, handle, vae)
+
+    manifest_path = Path(handle["manifest_path"])
+    segments = json.loads(manifest_path.read_text(encoding="utf-8"))["segments"]
+
+    # Clip 4 bypassed: only the last kept clip is decoded again, at full length.
+    vae.decodes = 0
+    with torch.inference_mode():
+        result = _final_decode(nodes, _rerun_validated(nodes, 3), vae)
+    assert vae.decodes == 1
+    assert _frames(result["result"][0].get_stream_source()) == d._final_frame_count(segments[:3])
+    assert len(json.loads(manifest_path.read_text(encoding="utf-8"))["segments"]) == 4
+
+    # Clip 4 back on: it is read from the cache; clip 3 is cut for it again.
+    vae.decodes = 0
+    with torch.inference_mode():
+        result = _final_decode(nodes, _rerun_validated(nodes, 4), vae)
+    assert vae.decodes == 1
+    assert _frames(result["result"][0].get_stream_source()) == d._final_frame_count(segments)
+
+
+def test_hard_cut_chain_leaves_bypassed_clips_out_of_the_video(ext):
+    d = importlib.import_module(f"{ext.pkg.__name__}.motion_context_disk")
+    nodes = ext.pkg.NODE_CLASS_MAPPINGS
+    vae = CountingVAE(d._frames_from_video_t)
+    join = nodes["MiniMaxH3MotionContextDiskJoin"]()
+    handle = None
+    for seed in range(1, 4):
+        kwargs = {"previous_cache": handle} if handle is not None else {"chain_mode": "hard_cut"}
+        handle = join.join(samples=_av(seed), validated=False, run_mode="full_batch", fps=24.0,
+                           unique_id="hard_cut_bypass", **kwargs)[0]
+    with torch.inference_mode():
+        _final_decode(nodes, handle, vae)
+    segments = json.loads(Path(handle["manifest_path"]).read_text(encoding="utf-8"))["segments"]
+
+    first_two = None
+    for _ in range(2):
+        kwargs = {"previous_cache": first_two} if first_two is not None else {}
+        first_two = join.join(validated=True, run_mode="full_batch", fps=24.0, unique_id="hard_cut_bypass", **kwargs)[0]
+    with torch.inference_mode():
+        result = _final_decode(nodes, first_two, vae)
+    assert _frames(result["result"][0].get_stream_source()) == sum(int(s["frames"]) for s in segments[:2])
+    assert len(json.loads(Path(handle["manifest_path"]).read_text(encoding="utf-8"))["segments"]) == 3

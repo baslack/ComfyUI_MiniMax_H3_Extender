@@ -1613,15 +1613,19 @@ def export_fl2va_final(
     from . import motion_context_disk as d
 
     data_path, manifest_path, manifest = d._load_manifest(cache)
-    segments = [dict(x) for x in manifest.get("segments", [])]
+    segments = d._chain_segments(cache, [dict(x) for x in manifest.get("segments", [])])
     if not segments:
-        raise ValueError("FL2VA Final Decode: empty cache.")
+        raise ValueError("FL2VA Final Decode: no clip ran; turn on at least one clip.")
     interrupted = bool(cache.get("interrupted", False)) if isinstance(cache, dict) else False
     project_total_clips = int(cache.get("project_total_clips", len(segments))) if isinstance(cache, dict) else len(segments)
     snapshot_count = int(cache.get("snapshot_count", len(segments))) if isinstance(cache, dict) else len(segments)
     if interrupted:
         snapshot_count = max(1, min(len(segments), snapshot_count))
         segments = segments[:snapshot_count]
+    # Export only these clips: an interrupted run's snapshot, or the clips
+    # before a bypassed tail.
+    keep = len(segments)
+    partial = keep < len(manifest.get("segments", []))
     selected_clip_ids = [str(x.get("clip_id") or "") for x in segments if str(x.get("clip_id") or "")]
     if abs(float(manifest.get("fps", fps)) - float(fps)) > 1e-6:
         raise ValueError(f"FL2VA Final Decode fps is {manifest.get('fps')}, export requested {fps}.")
@@ -1721,7 +1725,7 @@ def export_fl2va_final(
             audio_vae,
             float(fps),
             progress=progress,
-            selected_clip_ids=selected_clip_ids if interrupted else None,
+            selected_clip_ids=selected_clip_ids if partial else None,
         )
         timeline_segments = _timeline_segments(data_path, segments)
         expected_frames = sum(int(x.get("frames", 0)) for x in timeline_segments) + int(source_frames)
@@ -1923,12 +1927,12 @@ def export_fl2va_final(
         )
 
     segments = [dict(x) for x in manifest.get("segments", [])]
-    if interrupted:
-        segments = segments[:snapshot_count]
-        exact_segment_paths = exact_segment_paths[:snapshot_count]
+    if partial:
+        segments = segments[:keep]
+        exact_segment_paths = exact_segment_paths[:keep]
         # video_inputs contains the optional Clip 0 working video before the
         # generated plan videos. Keep that prefix plus every retained plan.
-        video_input_count = int(snapshot_count) + (1 if source_preview_path is not None else 0)
+        video_input_count = int(keep) + (1 if source_preview_path is not None else 0)
         video_inputs = video_inputs[:video_input_count]
         selected_clip_ids = [
             str(x.get("clip_id") or "") for x in segments if str(x.get("clip_id") or "")
@@ -1941,9 +1945,9 @@ def export_fl2va_final(
         audio_vae,
         float(fps),
         progress=progress,
-        selected_clip_ids=selected_clip_ids if interrupted else None,
+        selected_clip_ids=selected_clip_ids if partial else None,
     )
-    if interrupted:
+    if partial:
         segments = [dict(x) for x in audio_segments]
     else:
         segments = [dict(x) for x in manifest.get("segments", [])]

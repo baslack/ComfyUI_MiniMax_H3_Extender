@@ -95,6 +95,12 @@ frames (default 10), around the point where the two clips are in step; 0 cuts
 at the end of the overlap. Changing it re-cuts the seams without sampling
 again.
 
+In Full Batch, the video ends at the last Disk Join the chain ran through.
+Clips cached after it, for example in bypassed groups, stay cached and are
+used again when their groups are turned back on. The clip before them is
+re-cut once each way, to end the video or to blend into the next clip.
+Clip by Clip still previews every cached clip.
+
 ## Projects
 
 - **Save Project** writes a portable `.ext` archive: prompts, settings,
