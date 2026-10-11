@@ -105,9 +105,23 @@ def comfy_dirs(tmp_path_factory):
     return dirs
 
 
+class PromptQueue:
+    """The part of ComfyUI's prompt queue the routes use: what is running, and the free flags."""
+
+    def __init__(self):
+        self.running = []
+        self.flags = {}
+
+    def get_current_queue_volatile(self):
+        return list(self.running), []
+
+    def set_flag(self, name, data):
+        self.flags[name] = data
+
+
 @pytest.fixture(scope="session")
 def ext(comfy_dirs, tmp_path_factory):
-    """namespace(pkg, root, routes): the loaded package, its copy on disk, and its HTTP routes."""
+    """namespace(pkg, root, routes, queue): the loaded package, its copy on disk, its HTTP routes and the stub prompt queue."""
     from aiohttp import web
 
     root = tmp_path_factory.mktemp("custom_nodes") / "ComfyUI_MiniMax_H3_Extender"
@@ -116,9 +130,10 @@ def ext(comfy_dirs, tmp_path_factory):
         ignore=shutil.ignore_patterns(".git", "cache", "tests", "Workflow", "*.zip", "__pycache__", ".pytest_cache"),
     )
     routes = web.RouteTableDef()
+    queue = PromptQueue()
     server = types.ModuleType("server")
     server.PromptServer = type(
-        "PromptServer", (), {"instance": types.SimpleNamespace(routes=routes, send_sync=lambda *a, **k: None)}
+        "PromptServer", (), {"instance": types.SimpleNamespace(routes=routes, send_sync=lambda *a, **k: None, prompt_queue=queue)}
     )
     previous_server = sys.modules.get("server")
     sys.modules["server"] = server
@@ -134,4 +149,4 @@ def ext(comfy_dirs, tmp_path_factory):
             sys.modules.pop("server", None)
         else:
             sys.modules["server"] = previous_server
-    return types.SimpleNamespace(pkg=module, root=root, routes=routes)
+    return types.SimpleNamespace(pkg=module, root=root, routes=routes, queue=queue)
