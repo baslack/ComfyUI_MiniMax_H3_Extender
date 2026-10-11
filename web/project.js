@@ -10,7 +10,26 @@ function sizeText(bytes) {
 }
 
 function timeText(seconds) {
-    return new Date(seconds * 1000).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+    const date = new Date(seconds * 1000);
+    return date.toDateString() === new Date().toDateString()
+        ? date.toLocaleTimeString([], { timeStyle: "short" })
+        : date.toLocaleDateString([], { dateStyle: "short" });
+}
+
+// Grow the node so its buttons fit and the status line is not cut off.
+function fitNode(node) {
+    const ctx = app.canvas?.ctx;
+    let width = node.computeSize()[0];
+    if (ctx && node.__h3ProjectStatus) {
+        ctx.save();
+        ctx.font = "12px Arial";
+        width = Math.max(width, ctx.measureText(node.__h3ProjectStatus.label).width + 60);
+        ctx.restore();
+    }
+    const height = node.computeSize()[1];
+    if (node.size[0] < width || node.size[1] < height) {
+        node.setSize([Math.max(node.size[0], width), Math.max(node.size[1], height)]);
+    }
 }
 
 async function listCaches() {
@@ -38,11 +57,12 @@ async function refreshStatus(node) {
         status.label = !name
             ? "Give the project a name"
             : cache
-                ? `${cache.validated}/${cache.clips} clips validated · ${sizeText(cache.size_bytes)} · ${timeText(cache.updated_at)}`
+                ? `${cache.validated}/${cache.clips} validated · ${sizeText(cache.size_bytes)} · ${timeText(cache.updated_at)}`
                 : "No cache yet";
     } catch (error) {
         status.label = "Cache status unavailable";
     }
+    fitNode(node);
     node.setDirtyCanvas(true, true);
 }
 
