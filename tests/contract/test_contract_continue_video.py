@@ -221,3 +221,10 @@ def test_resampling_the_first_clip_clears_the_old_source_lead(ext, nodes, source
 
     assert d._source_frame_count(_manifest(out[0])["source_video"]) == 72
 
+
+
+def test_continue_video_names_the_cache_after_its_project(nodes, source_video, vaes):
+    project = nodes.MiniMaxH3Project().project("cabin-continued")[0]
+    handle, _ = nodes.MiniMaxH3ContinueVideo().start(
+        source_video, *vaes, 64, 64, "22", 0, "crop", project=project, unique_id="continue_project")
+    assert Path(handle["manifest_path"]).name == "chain_cabin-continued.json"

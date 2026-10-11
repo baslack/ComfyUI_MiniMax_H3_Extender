@@ -118,6 +118,13 @@ Cache, references and project temp files are in
 `ComfyUI/user/h3_extender_cache/`. They survive restarts and reinstalls of
 the node; delete that folder (or use **New Project**) to reclaim space.
 
+A graph clip chain keeps its files as `chain_<name>.*`, named by the
+**MiniMax H3 Project** node connected to the chain's first Disk Join (or to
+Continue Video). Names use letters, digits, `-` and `_`. Without a project
+the chain is named after that node's id, so two workflows with the same node
+ids, such as a workflow and its copy, share one cache. Give each workflow its
+own project name to keep their clips apart.
+
 ## Troubleshooting
 
 - **"Latent Refine needs a learned upscaler"**: see *Requirements*; connect the

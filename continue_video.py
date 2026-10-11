@@ -18,8 +18,10 @@ from .extender import (
 )
 from .motion_context_disk import (
     CACHE_TYPE,
+    PROJECT_TYPE,
     _make_handle,
     _manifest_for_first,
+    _project_name,
     _truncate_chain,
     _write_json_atomic,
 )
@@ -40,6 +42,9 @@ class MiniMaxH3ContinueVideo:
                 "audio_context_length": ("INT", {"default": 0, "min": 0, "max": 240, "step": 1}),
                 "fit": (list(CONTINUE_FIT_FILTERS), {"default": "crop", "tooltip": "A source of another aspect ratio: crop fills the frame and cuts the overflow, pad fits it inside black bars, stretch distorts it."}),
             },
+            "optional": {
+                "project": (PROJECT_TYPE, {"tooltip": "Names the chain's cache files, from MiniMax H3 Project. Without it the cache is named after this node."}),
+            },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
 
@@ -52,9 +57,10 @@ class MiniMaxH3ContinueVideo:
         "and context_latent to its Motion Context RAM."
     )
 
-    def start(self, video, vae, audio_vae, width, height, context_length="22", audio_context_length=0, fit="crop", unique_id=None):
+    def start(self, video, vae, audio_vae, width, height, context_length="22", audio_context_length=0, fit="crop", project=None, unique_id=None):
         desc = _continue_video_from_native_input(video)
-        data_path, manifest_path, manifest = _manifest_for_first(unique_id if unique_id is not None else "continue_video", FPS)
+        owner = _project_name(project) if project is not None else (unique_id if unique_id is not None else "continue_video")
+        data_path, manifest_path, manifest = _manifest_for_first(owner, FPS)
 
         source = manifest.get("source_video") if isinstance(manifest.get("source_video"), dict) else {}
         if (
