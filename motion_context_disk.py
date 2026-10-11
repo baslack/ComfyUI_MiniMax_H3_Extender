@@ -4858,6 +4858,8 @@ def _export_live_candidate_preview(
         raise ValueError("H3 progressive preview: empty chain.")
 
     validated_count = _validated_prefix_count(segments)
+    # Clips cached after the chain (bypassed ones) are not shown.
+    chain_count = len(segments)
     token = f"v125_{_safe_name(unique_id)}_{uuid.uuid4().hex[:8]}"
     preview_path = None
     root = _ensure_cache_root()
@@ -4883,8 +4885,8 @@ def _export_live_candidate_preview(
     )
     segments = [dict(x) for x in manifest.get("segments", [])]
 
-    # Everything currently present is validated: show cache directly.
-    if validated_count >= len(segments):
+    # Every clip of the chain is validated: show cache directly.
+    if validated_count >= chain_count:
         if not committed_path.exists():
             raise RuntimeError(
                 "H3 progressive preview: validated preview cache is missing."
@@ -4902,7 +4904,7 @@ def _export_live_candidate_preview(
         source_meta = _source_meta(manifest)
         return (
             preview_path,
-            int(manifest.get("final_frame_count", 0)) + _source_frame_count(source_meta),
+            _final_frame_count(segments[:chain_count]) + _source_frame_count(source_meta),
             0,
             None,
             "committed_full_cache",
@@ -6071,6 +6073,9 @@ class MiniMaxH3MotionContextDiskFinalDecode:
         # no second VAE decode are performed for the autosave.
         effective_mode = str(cache.get("run_mode", "full_batch")) if isinstance(cache, dict) else "full_batch"
         if effective_mode == "clip_by_clip":
+            segments = _chain_segments(cache, segments)
+            chain_count = len(segments)
+            color_timeline = _color_timeline(segments, float(fps), source_frames=source_frames)
             progress = _FinalDecodeNativeProgress(unique_id, total=6)
             clip_by_clip_export_profile = normalize_full_batch_export_profile({
                 "codec": codec, "crf": crf, "preset": preset,
@@ -6110,7 +6115,7 @@ class MiniMaxH3MotionContextDiskFinalDecode:
             if bool(editor_batch_requested):
                 try:
                     live_manifest = _load_manifest_from_paths(data_path, manifest_path) or manifest
-                    live_segments = [dict(x) for x in live_manifest.get("segments", [])]
+                    live_segments = [dict(x) for x in live_manifest.get("segments", [])][:chain_count]
                     live_manifest, live_segments = _ensure_ref2va_audio_cache(
                         data_path, manifest_path, live_manifest, vae, audio_vae, float(fps),
                         count=len(live_segments), progress=None,
@@ -6122,9 +6127,10 @@ class MiniMaxH3MotionContextDiskFinalDecode:
                         live_manifest, final_segment_path, _ = _ensure_ref2va_final_segment_cache(
                             data_path, manifest_path, live_manifest, i, vae, float(fps), ffmpeg,
                             clip_by_clip_export_profile, progress=None, color_adjustment=adjustment,
+                            count=chain_count,
                         )
                         editor_segment_paths.append(final_segment_path)
-                        live_segments = [dict(x) for x in live_manifest.get("segments", [])]
+                        live_segments = [dict(x) for x in live_manifest.get("segments", [])][:chain_count]
                     editor_batch = _export_video_editor_batch_from_cached_segments(
                         ffmpeg=ffmpeg,
                         segment_paths=editor_segment_paths,
@@ -6159,7 +6165,7 @@ class MiniMaxH3MotionContextDiskFinalDecode:
                         "error": str(exc),
                     }
 
-            total_frames = int(manifest.get("final_frame_count", 0)) + int(source_frames)
+            total_frames = _final_frame_count(segments) + int(source_frames)
             total_duration = float(total_frames / float(fps))
             size = _cache_size_mb(data_path, manifest_path)
             item = _comfy_media_item(preview_path, fps, "temp")
