@@ -95,6 +95,15 @@ frames (default 10), around the point where the two clips are in step; 0 cuts
 at the end of the overlap. Changing it re-cuts the seams without sampling
 again.
 
+The video ends at the last Disk Join the chain ran through. Clips cached
+after it, for example in bypassed groups, are left out and kept, and are used
+again when their groups are turned back on. That holds while the clips
+before them are read from the cache: a clip that runs again unvalidated
+deletes every clip after it, since they continued the old version. The last
+clip that ran is cut again when its neighbour leaves or comes back: Full
+Batch decodes it again each way; Clip by Clip decodes it when the clips
+after it are left out and trims its preview when they come back.
+
 ## Projects
 
 - **Save Project** writes a portable `.ext` archive: prompts, settings,
