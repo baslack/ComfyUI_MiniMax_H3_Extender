@@ -1,15 +1,18 @@
-"""Cache manager contract: list, wipe and rename clip caches.
+"""Cache manager contract: list, wipe, rename, archive and restore clip caches.
 
 The Project node's buttons go through the routes, and the h3cache command
-line works with ComfyUI closed. Wipe and rename refuse while something could
-be using the files: a running prompt (routes) or a running ComfyUI
-(command line).
+line works with ComfyUI closed. Changes refuse while something could be
+using the files: a running prompt (routes) or a running ComfyUI (command
+line). An archive carries a cache, its workflow and the inputs it loads, but
+not the previews and decoded videos the next Final Decode makes again.
 """
 from __future__ import annotations
 
+import json
 import socket
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import torch
@@ -86,9 +89,8 @@ def _free_port():
 
 
 def _cli(ext, comfy_dirs, port, *args):
-    cache_dir = Path(comfy_dirs.user) / "h3_extender_cache"
     return subprocess.run(
-        [sys.executable, str(ext.root / "h3cache.py"), "--cache-dir", str(cache_dir), "--port", str(port), *args],
+        [sys.executable, str(ext.root / "h3cache.py"), "--comfyui", str(Path(comfy_dirs.user).parent), "--port", str(port), *args],
         capture_output=True, text=True,
     )
 
@@ -118,3 +120,107 @@ def test_command_line_refuses_changes_while_comfyui_runs(ext, comfy_dirs):
         assert _cli(ext, comfy_dirs, port, "rename", "cli-busy", "cli-idle").returncode == 1
         assert _cli(ext, comfy_dirs, port, "list").returncode == 0
     assert "cli-busy" in _caches(ext)
+
+
+def _workflow(project, image):
+    return {
+        "id": "workflow-id",
+        "nodes": [
+            {"id": 1, "type": "MiniMaxH3Project", "widgets_values": [project], "widgets_values_named": {"name": project}},
+            {"id": 2, "type": "LoadImage", "widgets_values": [image, "image"]},
+        ],
+        "links": [],
+        "definitions": {"subgraphs": []},
+    }
+
+
+def _archive(ext, name, image):
+    response = _post(ext, "/h3_extender/caches/archive", name=name, workflow=_workflow(name, image))
+    assert response.status == 200
+    return Path(body_json(response)["path"])
+
+
+def test_archive_holds_the_cache_its_workflow_and_inputs_but_not_rebuilt_files(ext, comfy_dirs):
+    cache_dir = Path(_start(ext, "archive-a")["data_path"]).parent
+    # What Final Decode leaves next to the latents; the next run makes it again.
+    (cache_dir / "chain_archive-a.preview.mp4").write_bytes(b"preview")
+    (cache_dir / "chain_archive-a.final.video").mkdir()
+    (cache_dir / "chain_archive-a.final.video" / "ref2va_0000.mp4").write_bytes(b"final")
+    (Path(comfy_dirs.input) / "archive-a-ref.png").write_bytes(b"reference")
+    (Path(comfy_dirs.input) / "unused.png").write_bytes(b"unused")
+
+    names = set(zipfile.ZipFile(_archive(ext, "archive-a", "archive-a-ref.png")).namelist())
+    assert {"archive.json", "workflow.json", "inputs/archive-a-ref.png",
+            "cache/chain_archive-a.h3cache", "cache/chain_archive-a.json"} <= names
+    assert not [n for n in names if ".preview." in n or ".final.video" in n or "unused" in n]
+
+
+def test_restore_brings_back_the_cache_inputs_and_workflow(ext, comfy_dirs):
+    _start(ext, "archive-b")
+    image = Path(comfy_dirs.input) / "archive-b-ref.png"
+    image.write_bytes(b"original reference")
+    archive = _archive(ext, "archive-b", "archive-b-ref.png")
+    image.write_bytes(b"a different picture with the same name")
+
+    response = _post(ext, "/h3_extender/caches/restore", file=archive.name, name="archive-b-copy")
+    assert response.status == 200
+    result = body_json(response)
+    assert result["name"] == "archive-b-copy"
+    assert result["renamed_inputs"] == {"archive-b-ref.png": "archive-b-ref_restored1.png"}
+    assert (Path(comfy_dirs.input) / "archive-b-ref_restored1.png").read_bytes() == b"original reference"
+    assert image.read_bytes() == b"a different picture with the same name"
+
+    workflow = json.loads((Path(comfy_dirs.user) / "default" / "workflows" / result["workflow"]).read_text(encoding="utf-8"))
+    nodes = {n["type"]: n for n in workflow["nodes"]}
+    assert nodes["MiniMaxH3Project"]["widgets_values"] == ["archive-b-copy"]
+    assert nodes["LoadImage"]["widgets_values"][0] == "archive-b-ref_restored1.png"
+    assert workflow["id"] != "workflow-id"
+    # The restored cache carries on: its clip is there to validate.
+    validated = _start(ext, "archive-b-copy", samples=None, validated=True)
+    assert Path(validated["manifest_path"]).name == "chain_archive-b-copy.json"
+
+
+def test_restore_refuses_a_taken_name_a_file_elsewhere_and_a_running_prompt(ext):
+    _start(ext, "archive-c")
+    archive = _archive(ext, "archive-c", "none.png")
+    assert _post(ext, "/h3_extender/caches/restore", file=archive.name).status == 400
+    assert _post(ext, "/h3_extender/caches/restore", file="../" + archive.name).status == 404
+    ext.queue.running.append("prompt")
+    try:
+        assert _post(ext, "/h3_extender/caches/restore", file=archive.name, name="archive-c2").status == 409
+        assert _post(ext, "/h3_extender/caches/archive", name="archive-c", workflow=_workflow("archive-c", "none.png")).status == 409
+    finally:
+        ext.queue.running.clear()
+    assert "archive-c2" not in _caches(ext)
+
+
+def test_command_line_archives_and_restores(ext, comfy_dirs, tmp_path):
+    _start(ext, "cli-arch")
+    workflow = tmp_path / "cli-arch.json"
+    workflow.write_text(json.dumps(_workflow("cli-arch", "none.png")), encoding="utf-8")
+    port = _free_port()
+    out = tmp_path / "cli-arch.h3project"
+    assert _cli(ext, comfy_dirs, port, "archive", "cli-arch", "--workflow", str(workflow), "--out", str(out)).returncode == 0
+
+    with socket.socket() as comfyui:
+        comfyui.bind(("127.0.0.1", 0))
+        comfyui.listen()
+        busy = comfyui.getsockname()[1]
+        refused = _cli(ext, comfy_dirs, busy, "restore", str(out), "--name", "cli-arch-2")
+        assert refused.returncode == 1 and "ComfyUI is running" in refused.stderr
+        # Archiving only reads, so it works while ComfyUI runs.
+        assert _cli(ext, comfy_dirs, busy, "archive", "cli-arch", "--workflow", str(workflow),
+                    "--out", str(tmp_path / "again.h3project")).returncode == 0
+
+    assert _cli(ext, comfy_dirs, port, "restore", str(out), "--name", "cli-arch-2").returncode == 0
+    assert _caches(ext)["cli-arch-2"]["clips"] == 1
+
+    # A ComfyUI that has never made a cache has no cache folder yet.
+    fresh = tmp_path / "fresh-comfyui"
+    restored = subprocess.run(
+        [sys.executable, str(ext.root / "h3cache.py"), "--comfyui", str(fresh), "--port", str(port), "restore", str(out)],
+        capture_output=True, text=True,
+    )
+    assert restored.returncode == 0, restored.stderr
+    assert (fresh / "user" / "h3_extender_cache" / "chain_cli-arch.json").is_file()
+    assert (fresh / "user" / "default" / "workflows" / "cli-arch.json").is_file()

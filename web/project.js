@@ -87,6 +87,22 @@ async function wipe(name) {
     }
 }
 
+async function archiveProject(node) {
+    const name = String(nameWidget(node)?.value || "").trim();
+    if (!name) return;
+    if (!confirm(
+        `Archive the project '${name}'?\n\n` +
+        "Its cache, this workflow as it is now, and the input files it loads go into one .h3project file " +
+        "in output/h3_projects. Previews and decoded videos are left out; the next run makes them again."
+    )) return;
+    try {
+        const result = await post("/h3_extender/caches/archive", { name, workflow: (app.rootGraph ?? app.graph).serialize() });
+        alert(`Archived '${name}' with ${result.inputs.length} input files (${sizeText(result.size_bytes)}):\n${result.path}`);
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
 function button(text, onClick) {
     const el = document.createElement("button");
     el.textContent = text;
@@ -95,7 +111,7 @@ function button(text, onClick) {
     return el;
 }
 
-async function showCaches(node) {
+function dialog(onClose) {
     const overlay = document.createElement("div");
     overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center;";
     const panel = document.createElement("div");
@@ -105,21 +121,69 @@ async function showCaches(node) {
     const close = () => {
         overlay.remove();
         document.removeEventListener("keydown", onKey);
-        refreshAll();
+        onClose?.();
     };
     const onKey = (event) => { if (event.key === "Escape") close(); };
     overlay.addEventListener("click", (event) => { if (event.target === overlay) close(); });
     document.addEventListener("keydown", onKey);
     document.body.appendChild(overlay);
+    return { panel, close };
+}
+
+function dialogHeader(panel, text, close) {
+    const header = document.createElement("div");
+    header.style.cssText = "display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;";
+    const title = document.createElement("b");
+    title.textContent = text;
+    header.append(title, button("Close", close));
+    panel.appendChild(header);
+}
+
+async function showArchives(node) {
+    const { panel, close } = dialog(refreshAll);
+    dialogHeader(panel, "Restore a MiniMax H3 project", close);
+    let listing;
+    try {
+        listing = await (await api.fetchApi("/h3_extender/caches/archives")).json();
+    } catch (error) {
+        panel.append("Could not list the archives.");
+        return;
+    }
+    const where = document.createElement("div");
+    where.style.cssText = "opacity:.75;margin-bottom:8px;";
+    where.textContent = `Archives in ${listing.folder}`;
+    panel.appendChild(where);
+    if (!listing.archives.length) panel.append("No archives yet.");
+    for (const archive of listing.archives) {
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;align-items:center;gap:12px;padding:6px 0;border-top:1px solid var(--border-color,#444);";
+        const label = document.createElement("span");
+        label.style.cssText = "flex:1;";
+        label.textContent = `${archive.name} · ${sizeText(archive.size_bytes)} · ${timeText(archive.created_at)}`;
+        const input = document.createElement("input");
+        input.placeholder = "restore as (optional)";
+        input.style.cssText = "width:160px;";
+        row.append(label, input, button("Restore", async () => {
+            try {
+                const result = await post("/h3_extender/caches/restore", { file: archive.file, name: input.value.trim() });
+                const renamed = Object.entries(result.renamed_inputs)
+                    .map(([from, to]) => `\n  ${from} → ${to} (a different file had its name)`).join("");
+                alert(`Restored '${result.name}'. Open '${result.workflow}' from the Workflows panel.${renamed}`);
+                close();
+            } catch (error) {
+                alert(error.message);
+            }
+        }));
+        panel.appendChild(row);
+    }
+}
+
+async function showCaches(node) {
+    const { panel, close } = dialog(refreshAll);
 
     const render = async () => {
         panel.replaceChildren();
-        const header = document.createElement("div");
-        header.style.cssText = "display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;";
-        const title = document.createElement("b");
-        title.textContent = "MiniMax H3 clip caches";
-        header.append(title, button("Close", close));
-        panel.appendChild(header);
+        dialogHeader(panel, "MiniMax H3 clip caches", close);
 
         let caches;
         try {
@@ -195,6 +259,8 @@ app.registerExtension({
                 if (name && await wipe(name)) refreshStatus(node);
             }, { serialize: false });
             node.addWidget("button", "All caches…", null, () => showCaches(node), { serialize: false });
+            node.addWidget("button", "Archive…", null, () => archiveProject(node), { serialize: false });
+            node.addWidget("button", "Restore…", null, () => showArchives(node), { serialize: false });
             const widget = nameWidget(node);
             if (widget) {
                 const oldCallback = widget.callback;

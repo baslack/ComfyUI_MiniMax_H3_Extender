@@ -4,18 +4,28 @@ Without a project, a chain's cache is named after the node that starts it, so
 two workflows with the same node ids share one cache. A project name keeps
 each workflow's clips in their own files.
 
-The node's buttons list, wipe and rename caches through the routes below;
-the ``h3cache`` command line does the same with ComfyUI closed.
+The node's buttons list, wipe, rename, archive and restore caches through the
+routes below; the ``h3cache`` command line does the same with ComfyUI closed.
 """
+import asyncio
+import time
+from pathlib import Path
+
 from . import cache_library
 from .motion_context_disk import PROJECT_TYPE, _ensure_cache_root, _project_name
 
 try:
+    import folder_paths
     from aiohttp import web
     from server import PromptServer
 except Exception:  # static tests outside ComfyUI
+    folder_paths = None
     web = None
     PromptServer = None
+
+
+def _archive_dir():
+    return Path(folder_paths.get_output_directory()) / "h3_projects"
 
 
 class MiniMaxH3Project:
@@ -82,6 +92,53 @@ if web is not None and PromptServer is not None and getattr(PromptServer, "insta
             return web.json_response({"ok": False, "error": str(exc)}, status=400)
         _forget_results()
         return web.json_response({"ok": True, "name": name})
+
+    @PromptServer.instance.routes.post("/h3_extender/caches/archive")
+    async def h3_extender_cache_archive(request):
+        refused = _change_refused()
+        if refused is not None:
+            return refused
+        body = await request.json()
+        name = str(body.get("name") or "")
+        workflow = body.get("workflow")
+        if not isinstance(workflow, dict):
+            return web.json_response({"ok": False, "error": "The workflow is missing."}, status=400)
+        out = _archive_dir() / f"{name}_{time.strftime('%Y%m%d_%H%M%S')}{cache_library.ARCHIVE_SUFFIX}"
+        try:
+            result = await asyncio.to_thread(
+                cache_library.archive, _ensure_cache_root(), name, workflow, folder_paths.get_input_directory(), out
+            )
+        except FileNotFoundError as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=404)
+        except OSError as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=507)
+        return web.json_response({"ok": True, **result})
+
+    @PromptServer.instance.routes.get("/h3_extender/caches/archives")
+    async def h3_extender_cache_archives(request):
+        return web.json_response({"ok": True, "folder": str(_archive_dir()), "archives": cache_library.list_archives(_archive_dir())})
+
+    @PromptServer.instance.routes.post("/h3_extender/caches/restore")
+    async def h3_extender_cache_restore(request):
+        refused = _change_refused()
+        if refused is not None:
+            return refused
+        body = await request.json()
+        file = str(body.get("file") or "")
+        path = _archive_dir() / file
+        if Path(file).name != file or not file.endswith(cache_library.ARCHIVE_SUFFIX) or not path.is_file():
+            return web.json_response({"ok": False, "error": f"No archive named '{file}' in {_archive_dir()}."}, status=404)
+        workflows = Path(folder_paths.get_user_directory()) / "default" / "workflows"
+        try:
+            result = await asyncio.to_thread(
+                cache_library.restore, _ensure_cache_root(), path, folder_paths.get_input_directory(), workflows,
+                str(body.get("name") or "") or None,
+            )
+        except (ValueError, FileExistsError) as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=400)
+        except OSError as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=507)
+        return web.json_response({"ok": True, **result})
 
 
 NODE_CLASS_MAPPINGS = {
