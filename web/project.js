@@ -87,6 +87,27 @@ async function wipe(name) {
     }
 }
 
+async function renameProject(node) {
+    const widget = nameWidget(node);
+    const old = String(widget?.value || "").trim();
+    const name = prompt(
+        `Rename the project '${old}' to:
+
+` +
+        "Its clip chain, its refined chain and its Latent Caches are renamed too, so nothing runs again.",
+        old,
+    );
+    if (name === null || !name.trim() || name.trim() === old) return;
+    try {
+        const result = old ? await post("/h3_extender/caches/rename_project", { old, new: name.trim() }) : { name: name.trim() };
+        widget.value = result.name;
+        widget.callback?.(result.name);
+        app.graph.setDirtyCanvas(true, true);
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
 async function archiveProject(node) {
     const name = String(nameWidget(node)?.value || "").trim();
     if (!name) return;
@@ -258,6 +279,7 @@ app.registerExtension({
                 const name = String(nameWidget(node)?.value || "").trim();
                 if (name && await wipe(name)) refreshStatus(node);
             }, { serialize: false });
+            node.addWidget("button", "Rename project…", null, () => renameProject(node), { serialize: false });
             node.addWidget("button", "All caches…", null, () => showCaches(node), { serialize: false });
             node.addWidget("button", "Archive…", null, () => archiveProject(node), { serialize: false });
             node.addWidget("button", "Restore…", null, () => showArchives(node), { serialize: false });

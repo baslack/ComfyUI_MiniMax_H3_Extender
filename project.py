@@ -37,18 +37,19 @@ class MiniMaxH3Project:
             },
         }
 
-    RETURN_TYPES = (PROJECT_TYPE, "STRING")
-    RETURN_NAMES = ("project", "latent_directory")
+    RETURN_TYPES = (PROJECT_TYPE, "STRING", PROJECT_TYPE)
+    RETURN_NAMES = ("project", "latent_directory", "project_refined")
     OUTPUT_TOOLTIPS = ("Connect to the chain's first Disk Join, or to Continue Video.",
                        "A folder beside the chain's cache files for this project's Latent Caches (scripts_nodes), "
-                       "so they are renamed, wiped, archived and restored with it.")
+                       "so they are renamed, wiped, archived and restored with it.",
+                       "<name>_refined, for a second chain of the same clips refined: connect it like project.")
     FUNCTION = "project"
     CATEGORY = "MiniMax H3"
     DESCRIPTION = "Names the clip chain's cache, and gives the project a folder for its Latent Caches."
 
     def project(self, name):
         name = _project_name(name)
-        return (name, str(_ensure_cache_root() / f"chain_{name}.latents"))
+        return (name, str(_ensure_cache_root() / f"chain_{name}.latents"), cache_library.refined_name(name))
 
 
 def _change_refused():
@@ -96,6 +97,19 @@ if web is not None and PromptServer is not None and getattr(PromptServer, "insta
             return web.json_response({"ok": False, "error": str(exc)}, status=400)
         _forget_results()
         return web.json_response({"ok": True, "name": name})
+
+    @PromptServer.instance.routes.post("/h3_extender/caches/rename_project")
+    async def h3_extender_project_rename(request):
+        refused = _change_refused()
+        if refused is not None:
+            return refused
+        body = await request.json()
+        try:
+            result = cache_library.rename_project(_ensure_cache_root(), str(body.get("old") or ""), str(body.get("new") or ""))
+        except (ValueError, FileExistsError) as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=400)
+        _forget_results()
+        return web.json_response({"ok": True, **result})
 
     @PromptServer.instance.routes.post("/h3_extender/caches/archive")
     async def h3_extender_cache_archive(request):

@@ -43,7 +43,7 @@ class MiniMaxH3ContinueVideo:
                 "fit": (list(CONTINUE_FIT_FILTERS), {"default": "crop", "tooltip": "A source of another aspect ratio: crop fills the frame and cuts the overflow, pad fits it inside black bars, stretch distorts it."}),
             },
             "optional": {
-                "project": (PROJECT_TYPE, {"tooltip": "Names the chain's cache files, from MiniMax H3 Project. Without it the cache is named after this node."}),
+                "project": (PROJECT_TYPE, {"latent_cache_ignore": True, "tooltip": "Names the chain's cache files, from MiniMax H3 Project. Without it the cache is named after this node."}),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }

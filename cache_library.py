@@ -106,6 +106,30 @@ def rename(root, old, new):
     return new
 
 
+def refined_name(name):
+    """The name of a project's refined chain."""
+    return f"{project_name(name)}_refined"
+
+
+def rename_project(root, old, new):
+    """Rename a project: its chain, its refined chain and its Latent Cache folder, whichever exist.
+
+    Both new names must be free, so a clash leaves everything as it was. With
+    no caches yet there is nothing to move, and only the name changes.
+    """
+    new = project_name(new)
+    if new == old:
+        return {"name": new, "renamed": []}
+    entries = _entries(root)
+    pairs = [(o, n) for o, n in ((old, new), (refined_name(old), refined_name(new))) if o in entries]
+    for _, n in pairs:
+        if n in entries:
+            raise FileExistsError(f"MiniMax H3 cache: a cache named '{n}' already exists.")
+    for o, n in pairs:
+        rename(root, o, n)
+    return {"name": new, "renamed": [o for o, _ in pairs]}
+
+
 def _set_owner(root, name):
     manifest_path = Path(root) / f"chain_{name}.json"
     if manifest_path.exists():
