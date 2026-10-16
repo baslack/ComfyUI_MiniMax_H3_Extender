@@ -4879,6 +4879,14 @@ def _export_live_candidate_preview(
     )
     segments = [dict(x) for x in manifest.get("segments", [])]
 
+    # Validated clips that were never the candidate (e.g. a new chain built from
+    # clips already marked validated) have no decoded audio yet.
+    manifest, _ = _ensure_ref2va_audio_cache(
+        data_path, manifest_path, manifest, vae, audio_vae, fps,
+        count=validated_count, ffmpeg=ffmpeg, export_profile=export_profile,
+    )
+    segments = [dict(x) for x in manifest.get("segments", [])]
+
     # Commit already validated clips into ONE persistent full preview cache.
     manifest, committed_path, committed_video_path = _sync_committed_preview(
         data_path,
