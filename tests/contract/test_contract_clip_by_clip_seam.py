@@ -82,3 +82,16 @@ def test_clip_by_clip_previews_show_no_frame_twice(ext):
     d._decoded_preview_video_cache_path(Path(third["data_path"])).unlink()
     shown, total = _preview_frames(d, third)
     assert shown == total
+
+
+def test_clip_by_clip_previews_validated_clips_that_were_never_previewed(ext):
+    # A new chain filled with clips already marked validated (a renamed project,
+    # or a second chain built from cached clips) has no decoded audio for them yet.
+    d = importlib.import_module(f"{ext.pkg.__name__}.motion_context_disk")
+    nodes = ext.pkg.NODE_CLASS_MAPPINGS
+    first = _join(nodes, "clip_by_clip_unpreviewed", 1)
+    second = _join(nodes, "clip_by_clip_unpreviewed", 2, first)
+    _validate(second, 0, 1)
+
+    shown, total = _preview_frames(d, second)
+    assert shown == total
