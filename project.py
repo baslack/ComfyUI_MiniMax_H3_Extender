@@ -37,14 +37,18 @@ class MiniMaxH3Project:
             },
         }
 
-    RETURN_TYPES = (PROJECT_TYPE,)
-    RETURN_NAMES = ("project",)
+    RETURN_TYPES = (PROJECT_TYPE, "STRING")
+    RETURN_NAMES = ("project", "latent_directory")
+    OUTPUT_TOOLTIPS = ("Connect to the chain's first Disk Join, or to Continue Video.",
+                       "A folder beside the chain's cache files for this project's Latent Caches (scripts_nodes), "
+                       "so they are renamed, wiped, archived and restored with it.")
     FUNCTION = "project"
     CATEGORY = "MiniMax H3"
-    DESCRIPTION = "Names the clip chain's cache. Connect it to the chain's first Disk Join, or to Continue Video."
+    DESCRIPTION = "Names the clip chain's cache, and gives the project a folder for its Latent Caches."
 
     def project(self, name):
-        return (_project_name(name),)
+        name = _project_name(name)
+        return (name, str(_ensure_cache_root() / f"chain_{name}.latents"))
 
 
 def _change_refused():

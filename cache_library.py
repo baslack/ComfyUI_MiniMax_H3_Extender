@@ -1,9 +1,9 @@
 """The clip caches on disk: list, wipe, rename, archive and restore them.
 
 A chain's cache is every entry in the cache folder named ``chain_<name>.*``:
-the latents, the manifest (``.json``), decoded audio, previews and the
-per-clip video folders. Cache names never contain a dot, so that prefix
-belongs to one chain only.
+the latents, the manifest (``.json``), decoded audio, previews, the per-clip
+video folders and the project's Latent Cache folder (``.latents``). Cache
+names never contain a dot, so that prefix belongs to one chain only.
 
 An archive (``.h3project``, a zip) holds a cache, the workflow that made it
 and the input files the workflow loads. Previews and decoded videos are
