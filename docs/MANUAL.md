@@ -130,6 +130,12 @@ The Project node's `latent_directory` output is a folder beside those files,
 Latent Cache nodes (scripts_nodes): their latents then belong to the
 project, and rename, wipe, archive and restore take them along.
 
+The node also outputs `project_refined` (`<name>_refined`), for a second
+chain of the same clips refined. **Rename project…** renames the project:
+its chain, its refined chain and its Latent Caches. Disk Join's and Continue
+Video's `project` inputs are marked as naming only (`latent_cache_ignore`),
+so Latent Caches don't count the name and nothing runs again after a rename.
+
 The Project node shows its cache's clips, size and last update, and has
 buttons to **Wipe this cache** and to open **All caches**, which lists every
 cache with **Use** (point this node at it), **Rename** and **Wipe**. Use

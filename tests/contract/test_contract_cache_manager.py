@@ -228,7 +228,7 @@ def test_command_line_archives_and_restores(ext, comfy_dirs, tmp_path):
 
 def test_a_project_s_latent_caches_go_with_it(ext, comfy_dirs):
     project = ext.pkg.NODE_CLASS_MAPPINGS["MiniMaxH3Project"]()
-    name, latents = project.project("latents-a")
+    name, latents, _ = project.project("latents-a")
     _start(ext, name)
     latents = Path(latents)
     assert latents.parent == Path(comfy_dirs.user) / "h3_extender_cache"
@@ -249,3 +249,49 @@ def test_a_project_s_latent_caches_go_with_it(ext, comfy_dirs):
 
     assert _post(ext, "/h3_extender/caches/wipe", name="latents-c").status == 200
     assert not restored.parent.exists()
+
+
+def test_rename_project_moves_both_chains_and_the_latent_caches(ext):
+    project = ext.pkg.NODE_CLASS_MAPPINGS["MiniMaxH3Project"]()
+    name, latents, refined = project.project("whole-a")
+    assert refined == "whole-a_refined"
+    _start(ext, name)
+    _start(ext, refined)
+    Path(latents).mkdir()
+    (Path(latents) / "clip_1.latent").write_bytes(b"first pass")
+
+    ext.queue.flags.clear()
+    response = _post(ext, "/h3_extender/caches/rename_project", old="whole-a", new="whole-b")
+    assert response.status == 200
+    assert sorted(body_json(response)["renamed"]) == ["whole-a", "whole-a_refined"]
+    caches = _caches(ext)
+    assert {"whole-b", "whole-b_refined"} <= set(caches) and not {"whole-a", "whole-a_refined"} & set(caches)
+    assert (Path(project.project("whole-b")[1]) / "clip_1.latent").read_bytes() == b"first pass"
+    assert ext.queue.flags == {"unload_models": False, "free_memory": True}
+
+
+def test_rename_project_refuses_a_taken_name_without_moving_anything(ext):
+    _start(ext, "whole-c")
+    _start(ext, "whole-c_refined")
+    _start(ext, "whole-d_refined")
+    assert _post(ext, "/h3_extender/caches/rename_project", old="whole-c", new="whole-d").status == 400
+    assert {"whole-c", "whole-c_refined", "whole-d_refined"} <= set(_caches(ext))
+    assert _post(ext, "/h3_extender/caches/rename_project", old="whole-c", new="../escape").status == 400
+    ext.queue.running.append("prompt")
+    try:
+        assert _post(ext, "/h3_extender/caches/rename_project", old="whole-c", new="whole-e").status == 409
+    finally:
+        ext.queue.running.clear()
+
+
+def test_rename_project_without_caches_only_renames(ext):
+    response = _post(ext, "/h3_extender/caches/rename_project", old="never-ran", new="never-ran-b")
+    assert response.status == 200 and body_json(response) == {"ok": True, "name": "never-ran-b", "renamed": []}
+
+
+def test_project_inputs_are_naming_only_for_latent_cache(ext):
+    # scripts_nodes' Latent Cache leaves inputs with this option out of its upstream hash, so a
+    # renamed project doesn't re-run clips whose latents are cached.
+    nodes = ext.pkg.NODE_CLASS_MAPPINGS
+    for node in ("MiniMaxH3MotionContextDiskJoin", "MiniMaxH3ContinueVideo"):
+        assert nodes[node].INPUT_TYPES()["optional"]["project"][1]["latent_cache_ignore"] is True

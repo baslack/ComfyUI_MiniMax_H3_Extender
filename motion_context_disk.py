@@ -1210,7 +1210,7 @@ class MiniMaxH3MotionContextDiskJoin:
                     "tooltip": "Set on the first Join for the whole chain. motion_context: clips overlap through Motion Context RAM. hard_cut: independent clips joined by cuts, e.g. FL2VA."}),
                 "first_frame_from_previous": ("BOOLEAN", {"default": False,
                     "tooltip": "hard_cut only: this clip starts from the previous clip's last frame. Its first frame is hidden so the cut doesn't repeat a frame."}),
-                "project": (PROJECT_TYPE, {"tooltip": "Names the chain's cache files, from MiniMax H3 Project. Only the chain's first Join reads it; without it the cache is named after this node."}),
+                "project": (PROJECT_TYPE, {"latent_cache_ignore": True, "tooltip": "Names the chain's cache files, from MiniMax H3 Project. Only the chain's first Join reads it; without it the cache is named after this node."}),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
