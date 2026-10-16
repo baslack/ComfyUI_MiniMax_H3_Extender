@@ -224,3 +224,28 @@ def test_command_line_archives_and_restores(ext, comfy_dirs, tmp_path):
     assert restored.returncode == 0, restored.stderr
     assert (fresh / "user" / "h3_extender_cache" / "chain_cli-arch.json").is_file()
     assert (fresh / "user" / "default" / "workflows" / "cli-arch.json").is_file()
+
+
+def test_a_project_s_latent_caches_go_with_it(ext, comfy_dirs):
+    project = ext.pkg.NODE_CLASS_MAPPINGS["MiniMaxH3Project"]()
+    name, latents = project.project("latents-a")
+    _start(ext, name)
+    latents = Path(latents)
+    assert latents.parent == Path(comfy_dirs.user) / "h3_extender_cache"
+    latents.mkdir()
+    (latents / "clip_1.latent").write_bytes(b"first pass")
+    with_latents = _caches(ext)["latents-a"]["size_bytes"]
+
+    assert _post(ext, "/h3_extender/caches/rename", old="latents-a", new="latents-b").status == 200
+    moved = Path(project.project("latents-b")[1]) / "clip_1.latent"
+    assert moved.read_bytes() == b"first pass" and not latents.exists()
+    assert _caches(ext)["latents-b"]["size_bytes"] == with_latents
+
+    archive = _archive(ext, "latents-b", "none.png")
+    assert "cache/chain_latents-b.latents/clip_1.latent" in zipfile.ZipFile(archive).namelist()
+    assert _post(ext, "/h3_extender/caches/restore", file=archive.name, name="latents-c").status == 200
+    restored = Path(project.project("latents-c")[1]) / "clip_1.latent"
+    assert restored.read_bytes() == b"first pass"
+
+    assert _post(ext, "/h3_extender/caches/wipe", name="latents-c").status == 200
+    assert not restored.parent.exists()

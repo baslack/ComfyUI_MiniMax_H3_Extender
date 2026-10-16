@@ -125,6 +125,11 @@ the chain is named after that node's id, so two workflows with the same node
 ids, such as a workflow and its copy, share one cache. Give each workflow its
 own project name to keep their clips apart.
 
+The Project node's `latent_directory` output is a folder beside those files,
+`chain_<name>.latents`. Connect it to the `directory` of the project's
+Latent Cache nodes (scripts_nodes): their latents then belong to the
+project, and rename, wipe, archive and restore take them along.
+
 The Project node shows its cache's clips, size and last update, and has
 buttons to **Wipe this cache** and to open **All caches**, which lists every
 cache with **Use** (point this node at it), **Rename** and **Wipe**. Use
