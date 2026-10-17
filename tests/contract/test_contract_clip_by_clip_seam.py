@@ -51,13 +51,23 @@ def _validate(handle, *indices):
     path.write_text(json.dumps(manifest), encoding="utf-8")
 
 
-def _preview_frames(d, handle):
+class CountingVAE(DecodedClipVAE):
+    def __init__(self, frames_from_latent_t):
+        super().__init__(frames_from_latent_t)
+        self.decodes = 0
+
+    def decode(self, latent):
+        self.decodes += 1
+        return super().decode(latent)
+
+
+def _preview_frames(d, handle, vae=None):
     imageio_ffmpeg = pytest.importorskip("imageio_ffmpeg")
     manifest = json.loads(Path(handle["manifest_path"]).read_text(encoding="utf-8"))
     with torch.inference_mode():
         preview, total, *_ = d._export_live_candidate_preview(
             handle["data_path"], handle["manifest_path"], manifest, manifest["segments"],
-            DecodedClipVAE(d._frames_from_video_t), SilentAudioVAE(), 24.0, d._find_ffmpeg(), "clip_by_clip_seam")
+            vae or DecodedClipVAE(d._frames_from_video_t), SilentAudioVAE(), 24.0, d._find_ffmpeg(), "clip_by_clip_seam")
     return imageio_ffmpeg.count_frames_and_secs(str(preview))[0], total
 
 
@@ -95,3 +105,24 @@ def test_clip_by_clip_previews_validated_clips_that_were_never_previewed(ext):
 
     shown, total = _preview_frames(d, second)
     assert shown == total
+
+
+def test_rerunning_the_candidate_keeps_the_committed_preview(ext):
+    # The committed preview holds only the validated clips before the candidate, which a rerun of
+    # the candidate doesn't change; rebuilding it would decode those clips again.
+    d = importlib.import_module(f"{ext.pkg.__name__}.motion_context_disk")
+    nodes = ext.pkg.NODE_CLASS_MAPPINGS
+    first = _join(nodes, "rerun_candidate", 1)
+    _preview_frames(d, first)
+    _validate(first, 0)
+    second = _join(nodes, "rerun_candidate", 2, first)
+    _preview_frames(d, second)
+    committed = d._decoded_preview_video_cache_path(Path(second["data_path"]))
+    stamp = committed.stat().st_mtime_ns
+
+    rerun = _join(nodes, "rerun_candidate", 3, first)
+    assert committed.stat().st_mtime_ns == stamp
+    shown, total = _preview_frames(d, rerun)
+    assert shown == total
+    assert committed.stat().st_mtime_ns == stamp
+

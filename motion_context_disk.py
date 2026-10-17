@@ -963,25 +963,34 @@ def _truncate_chain(data_path, manifest_path, manifest, index):
         reduced["geometry"] = None
     reduced["final_frame_count"] = _final_frame_count(prefix)
     reduced = _sync_source_lead(data_path, reduced)
-    # The assembled preview is derived from the old timeline. A rerun may keep
-    # every decoded checkpoint before ``index``, but the joined preview itself
-    # must never survive the edit or Final Decode could publish stale pixels.
-    for key in (
-        "preview_committed_count",
-        "preview_audio_mode",
-        "preview_fl2va_timeline_signature",
-        "preview_updated_at",
-        "preview_portable_full",
-    ):
-        reduced.pop(key, None)
-    for preview_file in (
-        _decoded_preview_cache_path(data_path),
-        _decoded_preview_video_cache_path(data_path),
-    ):
-        try:
-            Path(preview_file).unlink(missing_ok=True)
-        except OSError:
-            pass
+    # The committed preview holds only validated clips, each at full length
+    # (the candidate's seam is cut from a copy when it is appended). When every
+    # one of them comes before ``index``, the edit leaves it valid, so a
+    # Clip-by-Clip rerun of the candidate extends it instead of rebuilding it.
+    # Any other preview shows the old timeline and must not survive the edit.
+    committed = int(reduced.get("preview_committed_count", 0) or 0)
+    keeps_preview = (
+        0 < committed <= index
+        and not reduced.get("preview_portable_full")
+        and str(reduced.get("sequence_mode") or "ref2va") == "ref2va"
+    )
+    if not keeps_preview:
+        for key in (
+            "preview_committed_count",
+            "preview_audio_mode",
+            "preview_fl2va_timeline_signature",
+            "preview_updated_at",
+            "preview_portable_full",
+        ):
+            reduced.pop(key, None)
+        for preview_file in (
+            _decoded_preview_cache_path(data_path),
+            _decoded_preview_video_cache_path(data_path),
+        ):
+            try:
+                Path(preview_file).unlink(missing_ok=True)
+            except OSError:
+                pass
     # Exact Ref2VA final sidecars are independent files. Drop only the suffix
     # whose latent descriptors were truncated; retained clips keep their final
     # bitstreams untouched.
