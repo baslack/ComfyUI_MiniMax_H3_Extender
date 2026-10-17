@@ -222,7 +222,7 @@ def test_command_line_archives_and_restores(ext, comfy_dirs, tmp_path):
         capture_output=True, text=True,
     )
     assert restored.returncode == 0, restored.stderr
-    assert (fresh / "user" / "h3_extender_cache" / "chain_cli-arch.json").is_file()
+    assert (fresh / "user" / "default" / "h3_extender_cache" / "chain_cli-arch.json").is_file()
     assert (fresh / "user" / "default" / "workflows" / "cli-arch.json").is_file()
 
 
@@ -231,7 +231,7 @@ def test_a_project_s_latent_caches_go_with_it(ext, comfy_dirs):
     name, latents, _ = project.project("latents-a")
     _start(ext, name)
     latents = Path(latents)
-    assert latents.parent == Path(comfy_dirs.user) / "h3_extender_cache"
+    assert latents.parent == Path(comfy_dirs.user) / "default" / "h3_extender_cache"
     latents.mkdir()
     (latents / "clip_1.latent").write_bytes(b"first pass")
     with_latents = _caches(ext)["latents-a"]["size_bytes"]

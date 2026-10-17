@@ -114,9 +114,11 @@ after it are left out and trims its preview when they come back.
 
 ## Where data lives
 
-Cache, references and project temp files are in
-`ComfyUI/user/h3_extender_cache/`. They survive restarts and reinstalls of
-the node; delete that folder (or use **New Project**) to reclaim space.
+Cache, references and project temp files are in the default user's folder,
+`ComfyUI/user/default/h3_extender_cache/`, beside its workflows. They survive
+restarts and reinstalls of the node; delete that folder (or use **New
+Project**) to reclaim space. Earlier builds used `ComfyUI/user/h3_extender_cache/`:
+with ComfyUI closed, move its contents to the new folder.
 
 A graph clip chain keeps its files as `chain_<name>.*`, named by the
 **MiniMax H3 Project** node connected to the chain's first Disk Join (or to

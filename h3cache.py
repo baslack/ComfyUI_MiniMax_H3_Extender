@@ -39,7 +39,7 @@ def size_text(n):
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="h3cache", description="List, wipe, rename, archive and restore MiniMax H3 clip caches.")
     parser.add_argument("--comfyui", type=Path, default=DEFAULT_COMFYUI, help=f"the ComfyUI folder (default: {DEFAULT_COMFYUI})")
-    parser.add_argument("--cache-dir", type=Path, help="default: <comfyui>/user/h3_extender_cache")
+    parser.add_argument("--cache-dir", type=Path, help="default: <comfyui>/user/default/h3_extender_cache")
     parser.add_argument("--host", default="127.0.0.1", help="where ComfyUI listens (default 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8188, help="ComfyUI's port (default 8188)")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -59,7 +59,7 @@ def main(argv=None):
     restore.add_argument("--name", help="restore the cache under this name instead of the archived one")
     args = parser.parse_args(argv)
 
-    cache_dir = args.cache_dir or args.comfyui / "user" / "h3_extender_cache"
+    cache_dir = args.cache_dir or args.comfyui / "user" / "default" / "h3_extender_cache"
     input_dir = args.comfyui / "input"
 
     if args.command == "list":
