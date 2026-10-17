@@ -522,8 +522,9 @@ def _safe_name(value):
 
 def _ensure_cache_root():
     # Persistent per-install state: it must survive restarts (ComfyUI wipes
-    # temp/) and node reinstalls, so it lives in ComfyUI's user directory.
-    root = Path(folder_paths.get_user_directory()) / "h3_extender_cache"
+    # temp/) and node reinstalls, so it lives in the default user's folder,
+    # beside the workflows that made it.
+    root = Path(folder_paths.get_user_directory()) / "default" / "h3_extender_cache"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
