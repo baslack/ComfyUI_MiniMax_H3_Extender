@@ -4798,6 +4798,14 @@ def _sync_committed_preview(
                     segment_tmp,
                     f"{token}_bootstrap_{i}",
                 )
+                if _color_is_neutral(adjustment):
+                    # Keep the decode as the clip's final video, which the
+                    # branch above re-encodes on the next rebuild.
+                    manifest, _, _ = _ensure_ref2va_final_segment_cache(
+                        data_path, manifest_path, manifest, i, vae, fps, ffmpeg,
+                        profile, decoded_video=video, count=target,
+                    )
+                    segments = [dict(x) for x in manifest.get("segments", [])]
                 del video
 
             video_inputs.append(segment_tmp)
