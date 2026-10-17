@@ -126,3 +126,32 @@ def test_rerunning_the_candidate_keeps_the_committed_preview(ext):
     assert shown == total
     assert committed.stat().st_mtime_ns == stamp
 
+
+
+def test_a_rebuild_keeps_its_decodes_for_the_next_rebuild(ext):
+    # Validated clips keep no decoded render of their own, so a rebuild decodes them from latents;
+    # that decode is kept, and the next rebuild uses it instead of decoding again.
+    d = importlib.import_module(f"{ext.pkg.__name__}.motion_context_disk")
+    nodes = ext.pkg.NODE_CLASS_MAPPINGS
+    first = _join(nodes, "rebuild_twice", 1)
+    _preview_frames(d, first)
+    _validate(first, 0)
+    second = _join(nodes, "rebuild_twice", 2, first)
+    _preview_frames(d, second)
+    _validate(second, 1)
+    third = _join(nodes, "rebuild_twice", 3, second)
+    _preview_frames(d, third)
+    committed = d._decoded_preview_video_cache_path(Path(third["data_path"]))
+
+    def decodes(rebuild):
+        if rebuild:
+            committed.unlink()
+        vae = CountingVAE(d._frames_from_video_t)
+        shown, total = _preview_frames(d, third, vae)
+        assert shown == total
+        return vae.decodes
+
+    without_rebuild = decodes(rebuild=False)
+    first_rebuild = decodes(rebuild=True)
+    assert first_rebuild > without_rebuild
+    assert decodes(rebuild=True) == without_rebuild
