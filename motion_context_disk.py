@@ -1199,23 +1199,23 @@ class MiniMaxH3MotionContextDiskJoin:
         return {
             "required": {
                 "samples": ("LATENT", {"lazy": True}),
-                "validated": ("BOOLEAN", {"default": False}),
+                "validated": ("BOOLEAN", {"default": False, "latent_cache_ignore": True}),
                 "run_mode": (
                     ["full_batch", "clip_by_clip"],
-                    {"default": "full_batch"},
+                    {"default": "full_batch", "latent_cache_ignore": True},
                 ),
                 "fps": (
                     "FLOAT",
-                    {"default": 24.0, "min": 1.0, "max": 240.0, "step": 0.001},
+                    {"default": 24.0, "min": 1.0, "max": 240.0, "step": 0.001, "latent_cache_ignore": True},
                 ),
             },
             "optional": {
                 "previous_cache": (CACHE_TYPE,),
                 "trim_frames": ("INT", {"forceInput": True, "lazy": True}),
-                "clip_name": ("STRING", {"default": "", "tooltip": "Appended to this clip's file name in individual clip exports."}),
-                "saturation": ("FLOAT", {"default": 100.0, "min": 0.0, "max": 200.0, "step": 1.0}),
-                "contrast": ("FLOAT", {"default": 100.0, "min": 50.0, "max": 150.0, "step": 1.0}),
-                "brightness": ("FLOAT", {"default": 100.0, "min": 50.0, "max": 150.0, "step": 1.0}),
+                "clip_name": ("STRING", {"default": "", "latent_cache_ignore": True, "tooltip": "Appended to this clip's file name in individual clip exports."}),
+                "saturation": ("FLOAT", {"default": 100.0, "min": 0.0, "max": 200.0, "step": 1.0, "latent_cache_ignore": True}),
+                "contrast": ("FLOAT", {"default": 100.0, "min": 50.0, "max": 150.0, "step": 1.0, "latent_cache_ignore": True}),
+                "brightness": ("FLOAT", {"default": 100.0, "min": 50.0, "max": 150.0, "step": 1.0, "latent_cache_ignore": True}),
                 "chain_mode": (["motion_context", "hard_cut"], {"default": "motion_context",
                     "tooltip": "Set on the first Join for the whole chain. motion_context: clips overlap through Motion Context RAM. hard_cut: independent clips joined by cuts, e.g. FL2VA."}),
                 "first_frame_from_previous": ("BOOLEAN", {"default": False,
