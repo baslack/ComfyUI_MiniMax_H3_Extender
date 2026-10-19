@@ -295,3 +295,12 @@ def test_project_inputs_are_naming_only_for_latent_cache(ext):
     nodes = ext.pkg.NODE_CLASS_MAPPINGS
     for node in ("MiniMaxH3MotionContextDiskJoin", "MiniMaxH3ContinueVideo"):
         assert nodes[node].INPUT_TYPES()["optional"]["project"][1]["latent_cache_ignore"] is True
+
+
+def test_disk_join_chain_settings_are_naming_only_for_latent_cache(ext):
+    # Validating a clip, switching run mode or recolouring it doesn't change the latents the next
+    # clip samples from, so it mustn't re-run that clip's cached sampling.
+    inputs = ext.pkg.NODE_CLASS_MAPPINGS["MiniMaxH3MotionContextDiskJoin"].INPUT_TYPES()
+    options = {name: spec[1] for group in ("required", "optional") for name, spec in inputs[group].items() if len(spec) > 1}
+    ignored = {name for name, opts in options.items() if opts.get("latent_cache_ignore")}
+    assert ignored == {"validated", "run_mode", "fps", "clip_name", "saturation", "contrast", "brightness", "project"}
