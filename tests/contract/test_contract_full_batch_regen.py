@@ -82,6 +82,28 @@ def test_regenerating_the_last_clip_decodes_only_that_clip(ext):
     assert _frames(result["result"][0].get_stream_source()) == total
 
 
+def test_final_decode_decodes_each_latents_only_clip_once(ext):
+    d = importlib.import_module(f"{ext.pkg.__name__}.motion_context_disk")
+    nodes = ext.pkg.NODE_CLASS_MAPPINGS
+    vae = CountingVAE(d._frames_from_video_t)
+    handle = None
+    for seed in (1, 2, 3, 4):
+        handle = _join(nodes, seed, handle)
+    with torch.inference_mode():
+        result = _final_decode(nodes, handle, vae)
+    assert vae.decodes == 4
+
+    segments = json.loads(Path(handle["manifest_path"]).read_text(encoding="utf-8"))["segments"]
+    assert _frames(result["result"][0].get_stream_source()) == d._final_frame_count(segments)
+    for i, desc in enumerate(segments):
+        assert desc["final_video_visible_frames"] == d._visible_frames(segments, i)
+
+    vae.decodes = 0
+    with torch.inference_mode():
+        _final_decode(nodes, handle, vae)
+    assert vae.decodes == 0
+
+
 def _rerun_validated(nodes, count, run_mode="full_batch", owner="full_batch_regen"):
     """Run the first ``count`` clips again as validated, as when the clips after them are bypassed."""
     handle = None

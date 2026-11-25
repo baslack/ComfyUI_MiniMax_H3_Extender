@@ -4607,6 +4607,7 @@ def _ensure_ref2va_audio_cache(
     audio_path = _decoded_audio_cache_path(data_path)
     _ensure_audio_cache_file(audio_path)
     changed = False
+    pending = None
 
     with open(audio_path, "ab", buffering=0) as acf:
         for i in range(target):
@@ -4639,12 +4640,25 @@ def _ensure_ref2va_audio_cache(
                     desc["final_video_dirty"] = True
                 if export_profile is not None:
                     full_segments[i] = desc
-                    manifest, _, _ = _ensure_ref2va_final_segment_cache(
-                        data_path, manifest_path, dict(manifest, segments=full_segments), i,
-                        vae, fps, ffmpeg, export_profile, decoded_video=video, count=target,
-                    )
-                    full_segments = [dict(x) for x in manifest["segments"]]
-                    desc = full_segments[i]
+                    if pending is not None:
+                        # Clip i just gave the previous clip its lead, so cut and encode it once.
+                        pending_video = _drop_next_lead(pending, full_segments, i - 1)
+                        manifest, _, _ = _ensure_ref2va_final_segment_cache(
+                            data_path, manifest_path, dict(manifest, segments=full_segments), i - 1,
+                            vae, fps, ffmpeg, export_profile, decoded_video=pending_video, count=target,
+                        )
+                        full_segments = [dict(x) for x in manifest["segments"]]
+                        desc = full_segments[i]
+                        pending = pending_video = None
+                    if i + 1 < target and "seam_lead" not in full_segments[i + 1]:
+                        pending = video
+                    else:
+                        manifest, _, _ = _ensure_ref2va_final_segment_cache(
+                            data_path, manifest_path, dict(manifest, segments=full_segments), i,
+                            vae, fps, ffmpeg, export_profile, decoded_video=video, count=target,
+                        )
+                        full_segments = [dict(x) for x in manifest["segments"]]
+                        desc = full_segments[i]
                 del video
 
             audio = _render_one_final_audio_segment(
